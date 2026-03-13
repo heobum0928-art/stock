@@ -46,6 +46,7 @@ class MarketCandidate:
     range_pct: float
     volume_ratio: float
     stop_price: float
+    take_profit_price: float
     entry_band_high: float
 
 
@@ -87,8 +88,8 @@ def evaluate_position(
     if pnl_pct <= -stop_loss_pct:
         return DecisionResult(
             action="SELL",
-            headline="손절 우선",
-            reason=f"매수가 대비 {pnl_pct:.2f}% 하락해서 손절 기준 {-stop_loss_pct:.2f}%를 넘었습니다.",
+            headline="지금 손절",
+            reason=f"매수가 대비 {pnl_pct:.2f}% 하락했습니다. 손절 기준 {-stop_loss_pct:.2f}%를 넘었습니다.",
             current_price=current_price,
             pnl_pct=pnl_pct,
             pnl_krw=pnl_krw,
@@ -102,7 +103,7 @@ def evaluate_position(
     if peak_gain_pct >= trailing_activation_pct and trail_drawdown >= trailing_drawdown_pct:
         return DecisionResult(
             action="SELL",
-            headline="트레일링 청산",
+            headline="지금 팔기",
             reason=(
                 f"진입 후 최고 수익률 {peak_gain_pct:.2f}%를 만든 뒤 "
                 f"고점 대비 {trail_drawdown:.2f}% 밀렸습니다."
@@ -121,9 +122,7 @@ def evaluate_position(
         return DecisionResult(
             action="SELL",
             headline="목표 수익 도달",
-            reason=(
-                f"수익률 {pnl_pct:.2f}% 구간이며 최근 5분 모멘텀이 {recent_momentum_pct:.2f}%로 둔화됐습니다."
-            ),
+            reason=f"수익률 {pnl_pct:.2f}%입니다. 단기 흐름이 둔화돼 익절 우선 구간입니다.",
             current_price=current_price,
             pnl_pct=pnl_pct,
             pnl_krw=pnl_krw,
@@ -137,8 +136,8 @@ def evaluate_position(
     if pnl_pct >= 1.0 and recent_volume_ratio < 0.95 and recent_momentum_pct <= 0:
         return DecisionResult(
             action="TRIM",
-            headline="부분 정리 가능",
-            reason="수익 구간이지만 거래량이 줄고 있어 일부 정리 후 남은 물량만 보는 쪽이 안전합니다.",
+            headline="절반 매도 가능",
+            reason="수익 구간이지만 거래량이 줄고 있습니다. 일부 익절 후 남은 물량만 보는 쪽이 안전합니다.",
             current_price=current_price,
             pnl_pct=pnl_pct,
             pnl_krw=pnl_krw,
@@ -151,7 +150,7 @@ def evaluate_position(
 
     return DecisionResult(
         action="HOLD",
-        headline="보유 가능",
+        headline="아직 보유",
         reason="손절 범위 안에 있고 단기 흐름도 아직 완전히 꺾이지 않았습니다.",
         current_price=current_price,
         pnl_pct=pnl_pct,
@@ -189,6 +188,7 @@ def score_market_candidate(
         score += min(max(btc_support, -0.6), 0.8) * 4.5
 
     stop_price = current_price * 0.988
+    take_profit_price = current_price * 1.018
     entry_band_high = current_price * 1.002
 
     if (
@@ -198,8 +198,8 @@ def score_market_candidate(
         and range_pct <= 3.5
     ):
         action = "BUY"
-        headline = "오늘 1순위 후보"
-        reason = "짧은 시간대 기준으로 모멘텀과 거래량이 같이 붙고 있어 무리 없는 진입 후보입니다."
+        headline = "지금 볼 종목"
+        reason = "모멘텀과 거래량이 같이 붙고 있어 오늘 기준으로 가장 낫습니다."
     elif (
         recent_momentum_pct > -0.05
         and volume_ratio >= 0.98
@@ -207,19 +207,19 @@ def score_market_candidate(
         and range_pct <= 3.8
     ):
         action = "WATCH"
-        headline = "확인 후 진입"
-        reason = "완전히 나쁘진 않지만 체결 강도가 더 붙는지 보고 들어가야 하는 자리입니다."
+        headline = "조금 더 기다리기"
+        reason = "완전히 나쁘진 않지만 체결이 더 붙는지 확인 후 들어가는 게 낫습니다."
         score -= 2.5
     else:
         action = "SKIP"
-        headline = "오늘은 제외"
-        reason = "월 3% 목표 기준으로는 굳이 무리해서 들어갈 필요가 없는 흐름입니다."
+        headline = "오늘 제외"
+        reason = "굳이 무리해서 들어갈 필요가 없는 흐름입니다."
         score -= 6.0
 
     if range_pct > 4.0 and recent_momentum_pct < 0:
         action = "SKIP"
-        headline = "변동성 과열 후 약세"
-        reason = "변동성만 크고 최근 흐름이 약해 추격 진입에 불리합니다."
+        headline = "변동성 과열"
+        reason = "변동성만 크고 최근 흐름이 약합니다. 추격 매수 구간이 아닙니다."
         score -= 5.0
 
     return MarketCandidate(
@@ -235,6 +235,7 @@ def score_market_candidate(
         range_pct=range_pct,
         volume_ratio=volume_ratio,
         stop_price=stop_price,
+        take_profit_price=take_profit_price,
         entry_band_high=entry_band_high,
     )
 
@@ -245,15 +246,15 @@ def build_market_bias(btc_summary: dict[str, float]) -> tuple[str, str]:
 
     if momentum > 0.15 and volume_ratio >= 1.0:
         return (
-            "매매 가능",
-            "BTC 흐름이 무너지지 않아 오늘은 1순위 종목만 짧게 볼 수 있는 날입니다.",
+            "오늘 매매 가능",
+            "BTC 흐름이 무너지지 않았습니다. 오늘은 1순위 종목만 짧게 볼 수 있습니다.",
         )
     if momentum < -0.15 and volume_ratio >= 1.0:
         return (
-            "쉬는 쪽 우세",
-            "BTC가 밀리면서 거래량도 붙고 있어 오늘은 보수적으로 보거나 쉬는 쪽이 낫습니다.",
+            "오늘 쉬기",
+            "BTC가 밀리면서 거래량도 붙고 있습니다. 오늘은 보수적으로 보거나 쉬는 쪽이 낫습니다.",
         )
     return (
         "선별 진입",
-        "강한 방향성은 아니므로 BUY가 뜬 종목만 짧게 보는 보수 운용이 맞습니다.",
+        "강한 방향성은 아닙니다. BUY가 뜬 종목만 짧게 보는 보수 운용이 맞습니다.",
     )

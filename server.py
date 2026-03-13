@@ -20,7 +20,7 @@ from strategy import (
 )
 
 
-DEFAULT_HOST = "127.0.0.1"
+DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
 WATCHLIST = ["BTC", "SOL", "XRP", "ETH"]
 KST = timezone(timedelta(hours=9), name="KST")
@@ -502,6 +502,15 @@ def build_dashboard(params: dict[str, list[str]]) -> str:
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/healthz":
+            body = b"ok"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path == "/logout":
             self.send_response(302)
             self.send_header("Location", "/")

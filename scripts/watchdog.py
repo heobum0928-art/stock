@@ -77,6 +77,9 @@ BOTS = {
     # ②역할 종료: 검증된 실전봇(margin_short_trader, 현물API 사용·정상)이 대체.
     # "blowoff_short_paper":   ROOT / "scripts" / "blowoff_short_paper.py",
     "margin_short_trader":   ROOT / "scripts" / "margin_short_trader.py",  # ★거래량폭발 급등주 마진숏 실전 (검증완료, 증거금상한100·2배, 2026-07-11)
+    "margin_manual_long_trader": ROOT / "scripts" / "margin_manual_long_trader.py",  # ★재량롱(ETH/LTC) 실전 —
+        # 2026-08-08: watchdog 미등록으로 8/7부터 5일간 프로세스 없이 방치됐던 것 발견·등록
+        # (서버측 스탑은 걸려있어 자금 위험은 없었으나 트레일링/청산판단 로직이 안 돌고 있었음)
     "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",  # RSI>92+거래량3배 숏 (MARGINAL, forward 모의검증, 2026-07-12)
     "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",    # 하이브리드 약세현금/강세 BTC50%+알트Top3 (강세 forward 검증·모의)
     "crossex_logger":        ROOT / "scripts" / "crossex_logger.py",   # 교차거래소 선행신호 로거 (순수로깅·매매0, 격리)

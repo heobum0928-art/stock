@@ -1,0 +1,100 @@
+@echo off
+chcp 65001 >nul
+cd /d "%~dp0"
+title EdgeAI - update
+
+echo ============================================
+echo   EdgeAI  -  Update to latest
+echo ============================================
+echo.
+
+rem 1) close running viewer (release file locks) - EdgeInspector only, never python
+echo [1/5] Closing running viewer...
+taskkill /IM EdgeInspector.exe /F /T >nul 2>&1
+rem wait until the exe is really gone (file lock released) so the rebuild can overwrite it.
+rem if this is skipped, a still-running app keeps the exe locked and you end up running the
+rem OLD build - the "I updated but nothing changed" trap.
+set _tries=0
+:waitkill
+tasklist /FI "IMAGENAME eq EdgeInspector.exe" 2>nul | find /I "EdgeInspector.exe" >nul
+if not errorlevel 1 (
+    set /a _tries+=1
+    if %_tries% lss 10 (
+        timeout /t 1 /nobreak >nul
+        goto :waitkill
+    )
+    echo [!] Viewer is still running and could not be closed. Close it manually, then re-run update.bat.
+    pause
+    goto :end
+)
+
+rem 2) force-sync to latest code (fetch + hard reset to origin/main)
+rem    A plain "git pull" fails if this PC has ANY local change (viewer PCs often do,
+rem    from earlier builds/edits), leaving the machine stuck on old code - which looks
+rem    like "update did nothing". So we fetch and hard-reset to exactly match GitHub.
+rem    Any local change to TRACKED files is first stashed as a safety backup (recoverable
+rem    via git stash list). Deliberately NOT using -u (--include-untracked): most of this
+rem    project (train/, infer_cs/, engine/, studio/, proto/, bat launchers, ...) is untracked
+rem    local-only content, and "git reset --hard" never touches untracked files anyway - so
+rem    -u only added risk (it would stash, i.e. vanish, all of that untracked content with
+rem    no auto-restore). Learned the hard way on 2026-08-07: it stashed away train/, infer_cs/
+rem    and even this script itself mid-run.
+echo [2/5] Fetching latest code from GitHub...
+git fetch origin main
+if errorlevel 1 (
+    echo.
+    echo [!] git fetch FAILED - check internet connection. Screenshot this.
+    pause
+    goto :end
+)
+echo     Backing up any local changes (safety) and syncing to latest...
+git stash push -m "update.bat auto-backup" >nul 2>&1
+git reset --hard origin/main
+if errorlevel 1 (
+    echo.
+    echo [X] git reset FAILED - screenshot this and contact support.
+    pause
+    goto :end
+)
+git log -1 --format="     now at: %%h  %%s"
+echo.
+
+rem 3) ensure python dependencies (installs anomalib etc. if missing - first time only)
+echo [3/5] Checking Python libraries...
+if exist "train\.venv\Scripts\python.exe" (
+    train\.venv\Scripts\python.exe examples\_common\ensure_deps.py
+    if errorlevel 1 (
+        echo [!] A Python library failed to install - check internet. Continuing anyway.
+    )
+) else (
+    echo     (train\.venv not found - skipping. New PC? See SETUP.md)
+)
+echo.
+
+rem 4) build viewer (EdgeInspector)
+echo [4/5] Building viewer (30s~1min)...
+dotnet build infer_cs\EdgeInspector\EdgeInspector.csproj -c Debug --nologo -v quiet
+if errorlevel 1 (
+    echo.
+    echo [X] Build FAILED - screenshot the error above. Close all viewer windows and retry.
+    pause
+    goto :end
+)
+echo.
+
+rem 5) launch viewer automatically
+echo [5/5] Launching viewer...
+start "" "%~dp0infer_cs\EdgeInspector\bin\Debug\net8.0-windows\EdgeInspector.exe"
+echo.
+echo   Viewer launched. If a window didn't open, run manually:
+echo   - Viewer:          dotnet run --project infer_cs\EdgeInspector
+echo   - Studio (all-in-one): studio.bat
+echo   - Training wizard: train\.venv\Scripts\python.exe examples\_common\training_wizard.py
+echo   - Labeling tool:   train\.venv\Scripts\python.exe examples\_common\labeling_tool.py
+echo   - Webcam demo:     cd examples\video_demo ^&^& ..\..\train\.venv\Scripts\python.exe live_demo.py --preset person
+echo.
+echo   * New PC without train\.venv? See SETUP.md first.
+echo.
+
+:end
+pause

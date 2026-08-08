@@ -1,0 +1,399 @@
+"""
+Watchdog — keeps alt_monitor.py and tg_bot.py alive.
+Restarts either process if it dies. Sends Telegram alert on restart.
+
+Run: python scripts/watchdog.py
+"""
+import sys
+import os
+import atexit
+import time
+import subprocess
+import logging
+import requests
+import yaml
+import psutil
+from pathlib import Path
+from datetime import datetime, date, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [WD][%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(ROOT / "logs" / "watchdog.log", encoding="utf-8"),
+    ],
+)
+log = logging.getLogger(__name__)
+
+CHECK_INTERVAL = 30  # 초마다 프로세스 확인
+
+# ★ 2026-07-26: "죽었는지"만 보던 기존 감시(proc.poll())로는 못 잡는 문제 발견 — margin_short_trader가
+#   같은 날 3번(3h34m/약5h/40분+) CPU delta=0으로 완전히 멈춰있었는데 프로세스 자체는 안 죽어서
+#   (exit code 없음) 기존 로직이 전혀 감지 못했음. 그중 한 번(DEXE)은 손절 지연 슬리피지로 실제
+#   손실(-2.3 USDT 추가분)까지 이어짐. CPU 누적시간이 일정 시간 이상 전혀 안 늘면 "행 상태"로 보고
+#   강제 재시작하는 감시 추가.
+# ★ 배포 전 에이전트 감사로 발견: 처음엔 전 봇 공통 30분 문턱을 쓰려 했는데, core_trader·core_leveraged
+#   (CHECK_SEC=1800, 문턱과 완전히 같은 값이라 30초 폴링 양자화 오차로 경계에서 오탐 가능)와
+#   hybrid_trader(CHECK_SEC=21600=6시간, 문턱보다 훨씬 길어서 매 사이클 확정적으로 "행상태"로
+#   오판되어 30분마다 영구 킬-재시작 루프에 빠질 뻔함 — 셋 다 "일봉 신호라 폴링 느려도 됨" 계열
+#   봇이라 자기 CHECK_SEC 자체가 김) — 봇별 자체 폴링주기를 감안해 개별 문턱을 두는 걸로 수정.
+HANG_CHECK_SEC = 1800   # 기본값(대부분의 봇: margin_short_trader 300s·rsi_extreme_short_paper 300s
+                        # ·accum_trader 30s 등 — 전부 이 문턱의 1/6 이하 주기라 안전)
+HANG_CHECK_OVERRIDE_SEC = {
+    # 일봉 신호 기반이라 폴링 자체가 느린 봇들 — 각자 CHECK_SEC의 약 3배로 여유를 둠
+    "core_trader": 5400,        # CHECK_SEC=1800 × 3
+    "core_leveraged": 5400,     # CHECK_SEC=1800 × 3 (실전봇이라 너무 길게는 안 둠)
+    "hybrid_trader": 43200,     # CHECK_SEC=21600 × 2
+}
+_last_cpu_time: dict[str, float] = {}
+_last_active_ts: dict[str, float] = {}
+
+# ★ 2026-08-08: 재시작 텔레그램 알림 과다 문제 — 조용한 로깅/모의매매 봇들이 30~45분 간격
+# 무더기 행상태 감지로 재시작될 때마다 전부 알림이 가서 스팸이 됨. 실제 돈이 걸린 봇만
+# 알림 보내고 나머지는 로그(watchdog.log)에만 남기도록 축소.
+ALERT_ON_RESTART = {"margin_short_trader", "accum_trader", "core_leveraged", "core_trader"}
+
+BOTS = {
+    "tg_bot":                ROOT / "scripts" / "tg_bot.py",
+    # "claude_intelligence" 제거 (2026-07-09): claude CLI 서브프로세스 호출이 계속 실패
+    # (WinError 2, 5분마다 헛돌기만 함) + 사용자 지시로 오토리서치/루프 당분간 중단.
+    # "claude_intelligence":   ROOT / "scripts" / "claude_intelligence.py",  # CI Mode
+    # "swing_monitor" 제거 (2026-06-30): 스윙 전략 없음, 불필요
+    # "vb_trader" 제거 (2026-06-25): forward t=-4.29, 승률17% — 폐기 확정
+    "retest_trader":         ROOT / "scripts" / "retest_trader.py",    # 돌파-재테스트 전략 B (모의 검증 중)
+    "em_trader":             ROOT / "scripts" / "em_trader.py",        # #24 초기모멘텀 (약세장 전용·모의, forward 게이트 검증)
+    "igniter_alert":         ROOT / "scripts" / "igniter_alert.py",    # #31 ML 점화 알림 (알림전용·주문없음, forward 추적)
+    "ml_trader":             ROOT / "scripts" / "ml_trader.py",        # #31 ML 점화 모의매매 (게이트 검증)
+    "core_trader":           ROOT / "scripts" / "core_trader.py",      # 코어 BTC 사이클타이밍 (검증엔진·모의 추적)
+    "core_leveraged":        ROOT / "scripts" / "core_leveraged.py",   # 코어+2배 레버리지 (바이낸스 선물 모의추적, 2026-07-09)
+    # "blowoff_short_paper" 은퇴 (2026-07-12): ①선물(fapi) 가격만 조회해 선물 미상장 코인(PYR 등)을
+    # 추적 못 하는 버그 — PYR 모의숏이 실제 -28% 하락(숏 +17%)인데 "가격 무변동, -0.2%"로 오기록됨.
+    # ②역할 종료: 검증된 실전봇(margin_short_trader, 현물API 사용·정상)이 대체.
+    # "blowoff_short_paper":   ROOT / "scripts" / "blowoff_short_paper.py",
+    "margin_short_trader":   ROOT / "scripts" / "margin_short_trader.py",  # ★거래량폭발 급등주 마진숏 실전 (검증완료, 증거금상한100·2배, 2026-07-11)
+    "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",  # RSI>92+거래량3배 숏 (MARGINAL, forward 모의검증, 2026-07-12)
+    "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",    # 하이브리드 약세현금/강세 BTC50%+알트Top3 (강세 forward 검증·모의)
+    "crossex_logger":        ROOT / "scripts" / "crossex_logger.py",   # 교차거래소 선행신호 로거 (순수로깅·매매0, 격리)
+    "volume_radar":          ROOT / "scripts" / "volume_radar.py",     # 거래대금 급증 레이더 (순수로깅·매매0, 격리)
+    "accum_trader":          ROOT / "scripts" / "accum_trader.py",     # 매집 단타 (live_guard 제어, 약세장 역추세 실전)
+    # "newlisting_monitor" 은퇴 (2026-07-13): 6일간 실전체결 0건(유일 실전창 7/3에도 "90초내 체결가못잡음"으로
+    # 놓침, 7/7 23시 전체disarm 후 재arm 안 됨), API타임아웃·DNS실패로 최대 7시간 다운 반복 — 신뢰성 문제.
+    # 게다가 근본 전략도 이미 죽음(STRATEGY.md: 신규상장펌핑 5분만 늦어도 11/11 전패) — 재검토(2026-07-13)해도
+    # 숏 반전도 안 됨(업비트/빗썸 원화프리미엄 현상이라 바이낸스엔 거의 안 옮음, n=3뿐).
+    # "newlisting_monitor":    ROOT / "scripts" / "newlisting_monitor.py",
+    "rsi_trader":            ROOT / "scripts" / "rsi_trader.py",       # RSI 과매도반등 (검증된 첫 후보·모의 실측)
+    # "cascade_trader" 은퇴 (2026-07-20): 07-08에 108조합 그리드서치+봉종가 백테스트착시 발견으로
+    # "구제 불가" 확정된 뒤에도 모의로 계속 돌았음. 어디서도 이 데이터/로직을 안 씀(import·파일참조 0건),
+    # 최근 실측도 -1.5~-2.2% 손절만 반복 확인 — 새 정보 없이 이미 죽은 판정만 재확인하는 상태.
+    # newlisting_monitor(07-13)와 동일 사유로 완전 제거.
+    # "cascade_trader":        ROOT / "scripts" / "cascade_trader.py",
+    "futures_logger":        ROOT / "scripts" / "futures_logger.py",   # 선물 펀딩/OI/롱숏 로거 (순수로깅·매매0, margin_short 오버레이 필터 후보용, 2026-07-13 유니버스 재정렬 후 재개)
+    # "lead_ws_trader" 폐기 (2026-07-02): 716건 비용후 -0.252%/t-4.07 통계적 확정손실 (#41)
+    # "momentum_trader" 폐기 (2026-07-03): 90일 절제백테 전 구간(15분~168H) 전부 음수(t-17.5~-1.3),
+    # 실측 15건도 -46.21%p 일치 확인. "오른 코인 추격"이 알트에서 전 타임프레임 역효과 (#42)
+    "volaccum_trader":       ROOT / "scripts" / "volaccum_trader.py",  # 거래량매집 단타 (#43, 20~80배 스파이크 모의, TP+3% SL-3% 2H)
+    # "spike_tracker" 제거 (2026-06-30): volume_radar와 역할 겹침, 불필요
+    "upbit_notice_monitor":  ROOT / "scripts" / "upbit_notice_monitor.py",   # 업비트 상장공지 감지지연 측정 (순수로깅·매매0)
+    "binance_notice_monitor": ROOT / "scripts" / "binance_notice_monitor.py", # 바이낸스 상장공지 감지지연 측정 (순수로깅·매매0)
+    "bithumb_notice_monitor": ROOT / "scripts" / "bithumb_notice_monitor.py", # 빗썸 공지 감지지연 측정 (순수로깅·매매0, 2026-07-16 watchdog 미등록으로 5일간 방치됐던 것 발견·등록)
+    "reaction_paper_trader": ROOT / "scripts" / "reaction_paper_trader.py",  # #45 상장공지 반응 모의매매 (순수모의·매매0, 손절-3%/트레일만/익절상한없음)
+    "orderflow_logger":      ROOT / "scripts" / "orderflow_logger.py",       # 체결방향 불균형(OFI) 로거 (순수로깅·매매0, 백테스트용 데이터 축적)
+    # "quiet_accum_screener" 임시 제거 (2026-07-09): exit=1 크래시루프 발견,
+    # 35초마다 재시작되며 텔레그램 재시작 알림 스팸 — 원인 진단 후 복구.
+    # "quiet_accum_screener":  ROOT / "scripts" / "quiet_accum_screener.py",   # #47 조용한 매집 스크리너 (거래대금상위+안오름+OFI매수우위 겹침, 순수로깅·매매0)
+    "breadth_monitor":       ROOT / "scripts" / "breadth_monitor.py",       # 시장전체 로테이션(breadth) 배경모니터 (순수로깅·매매0, 매수신호 아님)
+    # "whale_print_paper_trader" 은퇴 (2026-07-21): forward 1,733건 재판정 결과 day-clustered t-4.57,
+    # 비용후 평균-0.85% — 통계적 확정손실. 원 가설(BLUR n=1) 반증됨. STRATEGY.md 참조.
+    # "whale_print_paper_trader": ROOT / "scripts" / "whale_print_paper_trader.py",  # #49 고래발자국(바닥권) 반응 모의매매 (순수모의·매매0)
+}
+
+
+def send_tg(text: str) -> None:
+    try:
+        cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
+        tg = cfg.get("telegram", {})
+        token = tg.get("bot_token", "")
+        chat_id = str(tg.get("chat_id", ""))
+        if token and chat_id:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=5,
+            )
+    except Exception:
+        pass
+
+
+EXTRA_ARGS: dict[str, list[str]] = {
+    "claude_screener_dry":   ["--dry-run"],
+    "claude_screener_watch": ["--watch-mode"],
+    "swing_monitor":         ["--loop"],
+    # vb_trader 제거됨
+    "retest_trader":         ["--dry-run"],   # 합격선(모의30건+, 평균>0) 통과 전 실거래 금지
+    "em_trader":             ["--dry-run"],   # #24 게이트(CLEAN n≥50, 비용0.30%후 t≥3, 강건성) 통과 전 실거래 금지
+    "ml_trader":             ["--dry-run"],   # #31 게이트(CLEAN n≥30, 비용0.30%후 t≥2.5, 베이스라인 초과) 통과 전 실거래 금지
+    "core_trader":           ["--dry-run"],   # 코어 BTC타이밍 모의 — 실거래는 사용자 승인
+    "hybrid_trader":         ["--dry-run"],   # 하이브리드 모의 — 강세 forward 데이터 수집 전 실거래 금지
+    "claude_intelligence":   [],              # 2026-06-10 dry-run 전환 — 검증 전 실거래 금지 원칙
+}
+
+# 인스턴스 식별용 kill 키워드 매핑
+KILL_KEYWORDS: dict[str, str] = {
+    "claude_screener_dry":   "--dry-run",
+    "claude_screener_watch": "--watch-mode",
+    # vb_trader: 키워드 제거 (2026-06-10) — "--dry-run" 키워드 잔존으로 --live 인스턴스를
+    # 못 죽여 싱글톤 포트 충돌 → 재시작 크래시 루프 발생했던 버그 수정
+}
+
+
+def kill_existing(name: str) -> None:
+    extra_kw = KILL_KEYWORDS.get(name)
+    script_kw = "claude_screener.py" if "screener" in name else f"{name}.py"
+    for p in psutil.process_iter(["pid", "cmdline", "name"]):
+        try:
+            if "python" not in (p.info["name"] or "").lower():
+                continue  # 셸 래퍼 오인 종료 방지
+            parts = p.info["cmdline"] or []
+            # 스크립트 파일명이 독립 인자로 있을 때만 매칭 (문자열 내부 포함 방지)
+            match = any(part.endswith(script_kw) for part in parts)
+            if extra_kw:
+                match = match and extra_kw in parts
+            if match and p.pid != os.getpid():
+                log.warning(f"[{name}] 기존 PID {p.pid} 종료")
+                p.terminate()
+                try:
+                    p.wait(timeout=5)
+                except psutil.TimeoutExpired:
+                    p.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
+def start_bot(name: str, script: Path) -> subprocess.Popen:
+    kill_existing(name)
+    time.sleep(3)  # 기존 프로세스 완전 종료 + lockfile 정리 대기
+    # lockfile 강제 삭제 (atexit 미실행으로 남은 경우)
+    if name == "alt_monitor":
+        for lf in [ROOT / "data" / "alt_monitor.pid", ROOT / "data" / "bot.lock"]:
+            try:
+                lf.unlink(missing_ok=True)
+            except Exception:
+                pass
+    log.info(f"[{name}] 시작")
+    extra = EXTRA_ARGS.get(name, [])
+    # CREATE_NO_WINDOW: 콘솔창 안 띄움(봇은 파일로 로깅 → stdout 불필요). 창 클러터 방지.
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    proc = subprocess.Popen(
+        [sys.executable, str(script)] + extra,
+        cwd=str(ROOT),
+        creationflags=flags,
+    )
+    time.sleep(5)  # 새 프로세스가 lockfile 쓸 시간 확보
+    return proc
+
+
+def _reset_hang_tracking(name: str, proc: subprocess.Popen, now: float) -> None:
+    """새로 시작/재시작한 프로세스의 행상태 추적을 초기화. start_bot() 직후 항상 호출."""
+    try:
+        cpu = psutil.Process(proc.pid).cpu_times()
+        _last_cpu_time[name] = cpu.user + cpu.system
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        _last_cpu_time[name] = 0.0
+    _last_active_ts[name] = now
+
+
+HANG_CPU_EPSILON = 0.05   # ★ 2026-07-26 배포 당일 발견: cur > prev(증가폭 무관, 1틱이라도 늘면 진행중
+# 으로 판정)로는 실전에서 안 잡힘 — 45분+ CPU delta=0(수동 90초 창으로 재확인)인데도 watchdog 자체는
+# 살아서 30초마다 정상 체크 중이었는데 "행상태 감지"가 끝내 안 뜸. 원인 추정: 진짜 행 상태에서도
+# Windows가 커널레벨 미세 틱(APC 전달·페이지폴트 등)을 프로세스에 붙여 cur이 아주 미세하게(수 ms)
+# 늘어날 수 있어, cur > prev만으로는 매 체크마다 우연히 조건이 참이 돼 last_active가 계속 리셋되고
+# 절대 문턱에 못 닿을 수 있음. "의미있는 진행"만 진행으로 인정하도록 최소 증가폭 기준 추가.
+# ★ bug-hunter 검토: 처음엔 0.5초로 잡았으나, hybrid_trader(문턱43200s=자기 CHECK_SEC21600×2 —
+# 문턱 안에 사이클이 딱 2번뿐)와 core_trader/core_leveraged(문턱5400s=CHECK_SEC1800×3 — 사이클
+# 2~3번뿐)는 사이클당 실제 연산(단일 BTC 캔들 조회+지표계산 정도)이 가벼워 0.5초를 못 채우면
+# 건강한 봇이 오탐-강제킬될 위험 지적받음. Windows 타이머 틱(통상 15.6ms)보다는 충분히 크면서
+# 가벼운 사이클도 오탐 안 하도록 0.05초(50ms)로 하향 — 실측검증 전까지는 가설적 수정임을 유의.
+
+def _check_hang(name: str, proc: subprocess.Popen, now: float) -> bool:
+    """CPU 누적시간이 HANG_CHECK_SEC 동안 HANG_CPU_EPSILON(현재 0.05초)+ 안 늘면 True(행상태로 판단).
+    proc.poll()로는 못 잡는, 살아있지만 멈춘 프로세스 감지용(2026-07-26 신설, 상세는 상단 주석)."""
+    try:
+        cpu = psutil.Process(proc.pid).cpu_times()
+        cur = cpu.user + cpu.system
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False  # 조회 자체가 안 되면 판단 보류(죽었으면 다음 사이클에 poll()이 잡음)
+    prev = _last_cpu_time.get(name)
+    if prev is None or cur - prev >= HANG_CPU_EPSILON:
+        _last_cpu_time[name] = cur
+        _last_active_ts[name] = now
+        return False
+    last_active = _last_active_ts.get(name, now)
+    threshold = HANG_CHECK_OVERRIDE_SEC.get(name, HANG_CHECK_SEC)
+    return (now - last_active) > threshold
+
+
+def write_weekly() -> None:
+    try:
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "weekly_summary.py")],
+            cwd=str(ROOT), timeout=30,
+        )
+    except Exception as e:
+        log.warning(f"[weekly_summary] 실패: {e}")
+
+
+def write_session(target_date: str | None = None) -> None:
+    try:
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "session_writer.py")]
+            + ([target_date] if target_date else []),
+            cwd=str(ROOT), timeout=30,
+        )
+    except Exception as e:
+        log.warning(f"[session_writer] 실패: {e}")
+
+
+def run_ai_analyze() -> None:
+    out = ROOT / "docs" / f"ai_analysis_{date.today().isoformat()}.md"
+    if out.exists():
+        log.info("[ai_analyze] 오늘 분석 이미 존재, 스킵")
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "ai_analyze.py")],
+            cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", timeout=120,
+        )
+        if result.returncode == 0 and out.exists():
+            summary = result.stdout[-600:].strip()
+            send_tg(f"📊 AI 분석 완료\n\n{summary}")
+            log.info("[ai_analyze] 완료")
+        else:
+            send_tg(f"❌ AI 분석 실패\n{result.stderr[-300:]}")
+            log.warning(f"[ai_analyze] 실패: {result.stderr[-200:]}")
+    except subprocess.TimeoutExpired:
+        send_tg("❌ AI 분석 타임아웃 (120s)")
+        log.warning("[ai_analyze] 타임아웃")
+    except Exception as e:
+        log.warning(f"[ai_analyze] 예외: {e}")
+
+
+def run_daily_report() -> None:
+    """매일 전략점검 — cascade 실거래 게이트 + 선물신호 축적 + 코어/RT 한 장."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "daily_strategy_report.py")],
+            cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", timeout=60,
+        )
+        if result.returncode == 0:
+            log.info("[daily_report] 완료")
+        else:
+            log.warning(f"[daily_report] 실패: {result.stderr[-200:]}")
+    except Exception as e:
+        log.warning(f"[daily_report] 예외: {e}")
+
+
+LOCKFILE = ROOT / "data" / "watchdog.pid"
+
+
+_wd_sock = None  # GC 방지
+
+
+def _acquire_singleton() -> None:
+    """포트 바인딩 싱글톤 — 이미 watchdog가 포트를 점유 중이면 새 인스턴스가
+    스스로 종료한다(기존을 살림). 과거 '포트 못 잡으면 기존을 죽이고 차지' 방식은
+    동시 기동 시 상호 킬 레이스로 watchdog가 여러 개 공존하는 버그가 있었음
+    (2026-06-14: PC 재부팅 누적으로 watchdog 5개 → 각자 봇을 띄워 봇 중복 사건).
+    PC 재부팅 시엔 OS가 포트를 회수하므로 새 watchdog가 정상적으로 점유한다."""
+    import socket
+    global _wd_sock
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+    try:
+        s.bind(("127.0.0.1", 47230))  # watchdog 전용 포트
+        s.listen(1)                   # listen까지 해서 확실히 점유 (LISTEN 상태로 가시화)
+        _wd_sock = s
+        atexit.register(s.close)
+    except OSError:
+        s.close()
+        log.warning("포트 47230 이미 사용 중 — watchdog 이미 실행 중이므로 새 인스턴스 종료")
+        sys.exit(0)
+
+
+def main() -> None:
+    _acquire_singleton()
+    LOCKFILE.write_text(str(os.getpid()))
+    atexit.register(lambda: LOCKFILE.unlink(missing_ok=True))
+
+    log.info("=== 워치독 시작 ===")
+    send_tg("🐕 워치독 시작 — 봇 자동 재시작 감시 중")
+
+    # 시작 시 오늘 세션 로그 + 주간 요약 생성
+    write_session()
+    write_weekly()
+    last_date = datetime.now(KST).date()
+
+    last_analysis_date: date | None = None
+
+    procs: dict[str, subprocess.Popen] = {}
+    for name, script in BOTS.items():
+        procs[name] = start_bot(name, script)
+        _reset_hang_tracking(name, procs[name], time.time())
+        time.sleep(2)
+
+    while True:
+        time.sleep(CHECK_INTERVAL)
+
+        # 날짜 바뀌면 전날 마무리 + 오늘 파일 생성
+        today = datetime.now(KST).date()
+        if today != last_date:
+            write_session(last_date.isoformat())  # 전날 최종 기록
+            write_session()                        # 오늘 새 파일
+            write_weekly()                         # 7일 롤링 요약 갱신
+            last_date = today
+            log.info(f"[session] 날짜 변경 → {today} 세션 생성")
+
+        # 매일 00:00 KST AI 분석 + 전략점검(cascade 게이트/선물) 자동 실행
+        now_kst = datetime.now(KST)
+        if (last_analysis_date != today
+                and now_kst.hour == 0 and now_kst.minute < 1):
+            run_ai_analyze()
+            run_daily_report()
+            last_analysis_date = today
+
+        now = time.time()
+        for name, script in BOTS.items():
+            proc = procs[name]
+            if proc.poll() is not None:  # 프로세스 종료됨
+                log.warning(f"[{name}] 죽음 감지 (exit={proc.returncode}) → 재시작")
+                if name in ALERT_ON_RESTART:
+                    send_tg(f"⚠️ <b>{name}</b> 종료됨 → 자동 재시작")
+                write_session()  # 재시작 시점 기록 업데이트
+                time.sleep(2)
+                procs[name] = start_bot(name, script)
+                _reset_hang_tracking(name, procs[name], time.time())
+            elif _check_hang(name, proc, now):
+                _th = HANG_CHECK_OVERRIDE_SEC.get(name, HANG_CHECK_SEC)
+                log.warning(f"[{name}] 행상태 감지(CPU {_th//60}분+ 무변화) → 강제 재시작")
+                if name in ALERT_ON_RESTART:
+                    send_tg(f"🥶 <b>{name}</b> 행상태(멈춤) 감지 → 강제 재시작")
+                write_session()
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+                time.sleep(2)
+                procs[name] = start_bot(name, script)
+                _reset_hang_tracking(name, procs[name], time.time())
+
+
+if __name__ == "__main__":
+    main()

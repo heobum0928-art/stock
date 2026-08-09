@@ -79,6 +79,8 @@ LOOKBACK = 84              # 7h = 5분봉 84개 (LOOKBACK_H*12)
 VOL_MULT = 0.0            # 거래량 필터 미사용 (검증 결과 불필요)
 HOLD_H = 48
 STOP_PCT = 40.0           # 진입가 대비 +40% 상승 시 손절(2배 청산선 +50% 안쪽)
+TRAIL_TRIGGER_PCT = 15.0  # ★ 2026-08-10: 최유리(가격하락) 15%p 이상 찍으면 트레일링 무장
+TRAIL_GIVEBACK_PCT = 10.0  # 그 최고점에서 10%p 반납하면 즉시 청산(48h/스탑 기다리지 않음)
 COOLDOWN_H = 12           # 코인당 재진입 쿨다운
 STRIKE_BLACKLIST_H = 24*7  # ★ 2026-08-09: 같은 코인이 연속 2회 스탑(-40%)에 걸리면 7일 블랙리스트
                             # (TUTUSDT 2연패 계기 — 신호가 특정 코인과 구조적으로 안 맞을 가능성 대응,
@@ -348,15 +350,19 @@ def main():
                 t = tick.get(sym)
                 px = t[0] if t else pos["entry_price"]
                 # ★ 2026-07-27: 청산구조(트레일링·손절폭) 변경은 3개 AI(제미나이·챗GPT·마누스) 공통권고로
-                #   "지금 표본(n=2)으론 시기상조, 표본 더 쌓고 절제백테 먼저"로 보류됨. 대신 실제 매매엔
-                #   전혀 손대지 않고 MFE(최대유리변동)/MAE(최대불리변동)만 매 사이클 그림자기록 — 나중에
-                #   "그때 손절폭 X%였으면/트레일링이었으면 어디서 청산됐을지" 사후분석용 원재료 확보.
+                #   "지금 표본(n=2)으론 시기상조, 표본 더 쌓고 절제백테 먼저"로 보류되어 MFE/MAE만 그림자
+                #   기록해왔음. ★ 2026-08-10: 그 사이 실거래(COOKIE +6%→-25%, TST +24%→-4.5%)에서
+                #   바로 그 우려(수익 줬다가 다 반납)가 실제로 재현됨 — 트레일링만 도입(손절폭 40%는
+                #   미검증 상태 유지, 건드리지 않음). 최유리 15%p 도달 후 10%p 반납 시 즉시 청산.
                 pos["mfe_price"] = min(pos.get("mfe_price", px), px)
                 pos["mae_price"] = max(pos.get("mae_price", px), px)
                 stop_hit = px >= pos["entry_price"] * (1 + STOP_PCT/100)
-                if not stop_hit and now < pos["exit_ts"]:
+                cur_pnl_pct = (1 - px/pos["entry_price"]) * 100
+                peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
+                trail_hit = peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
+                if not stop_hit and not trail_hit and now < pos["exit_ts"]:
                     continue
-                reason = f"스탑+{STOP_PCT:.0f}%" if stop_hit else f"{HOLD_H}h만기"
+                reason = f"스탑+{STOP_PCT:.0f}%" if stop_hit else (f"트레일링(최고{peak_pnl_pct:.0f}%→{cur_pnl_pct:.0f}%)" if trail_hit else f"{HOLD_H}h만기")
                 venue = pos.get("venue", "margin")   # 옛 포지션(필드 없음) = 마진으로 취급(원래 유일 경로였음)
                 if venue == "futures":
                     cres = fut_guard.close_short_futures(pos["coin"], stop_order_id=pos.get("stop_order_id"))

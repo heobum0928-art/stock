@@ -102,6 +102,38 @@ STRIKES_PATH = ROOT / "data" / "margin_short_coin_strikes.json"  # 코인별 연
 COOLDOWN_PATH = ROOT / "data" / "margin_short_cooldown.json"  # ★ 2026-07-22(감사 발견): 재시작 시
 # cooldown이 메모리 전용이라 초기화되던 문제 — positions와 동일하게 디스크 영속화.
 
+# ★ 2026-08-09: 신규상장 급등(TUTUSDT 2연패 계기) — 숏 대신 모의 롱으로 추적.
+# 아직 검증 안 된 가설(상장빔은 되돌림 안 하고 계속 간다)이라 반드시 dry-run만, 실주문 절대 금지.
+NEWLISTING_MAX_AGE_DAYS = 30      # 이보다 최근 상장이면 "신규상장 펌프"로 분류
+NEWLISTING_LONG_MARGIN = MARGIN_PER_TRADE / 2
+NEWLISTING_STOP_PCT = 17.5         # 숏(40%)보다 훨씬 타이트 — 상장빔 반전은 빠르고 격렬함
+NEWLISTING_HOLD_H = 18             # 48h 아님 — 하이프는 빨리 식음
+LISTING_AGE_CACHE_PATH = ROOT / "data" / "_listing_age_cache.json"
+NEWLISTING_POS_PATH = ROOT / "data" / "newlisting_long_paper_pos.json"
+NEWLISTING_TRADES_PATH = ROOT / "data" / "newlisting_long_paper_trades.csv"
+
+
+def _listing_age_days(coin: str, cache: dict) -> float | None:
+    """스팟 일봉 캔들 개수로 상장 이후 경과일 역산(바이낸스에 직접적인 상장일 필드가 없음).
+    캐시 TTL 7일(경과일은 단조증가라 자주 다시 조회할 필요 없음)."""
+    now = time.time()
+    c = cache.get(coin)
+    if c and now - c.get("ts", 0) < 7*24*3600:
+        return c.get("age_days")
+    try:
+        r = requests.get(f"{BASE}/api/v3/klines", params={"symbol": f"{coin}USDT", "interval": "1d", "limit": 1000}, timeout=10)
+        n = len(r.json()) if r.status_code == 200 else None
+    except Exception:
+        n = None
+    if n is not None:
+        cache[coin] = {"age_days": n, "ts": now}
+    return n
+
+
+def is_recent_listing(coin: str, cache: dict) -> bool:
+    age = _listing_age_days(coin, cache)
+    return age is not None and age < NEWLISTING_MAX_AGE_DAYS
+
 # 유니버스: 바이낸스 마진 대출가능 코인 전체 (2026-07-11 확장 — 빗썸 교집합 제한 제거)
 # ★ 발견1: 백테스트 314개 중 실제 빌릴 수 있는 건 절반뿐(급등 소형알트는 대출재고 없어 -3045 거부).
 #   재검증: 엣지는 오히려 대출가능 쪽이 큼 → 대출가능만 감시.
@@ -278,6 +310,8 @@ def main():
     now0 = time.time()
     cooldown = {k: v for k, v in cooldown.items() if v > now0}   # 만료된 항목 정리(파일 무한증가 방지)
     strikes = _load(STRIKES_PATH, {})
+    listing_age_cache = _load(LISTING_AGE_CACHE_PATH, {})
+    newlisting_positions = _load(NEWLISTING_POS_PATH, {})
     last_refresh = 0.0
     last_fut_refresh = 0.0
     last_capcfg_alert = 0.0   # ★ engine_caps_usdt 설정누락 알림 스팸방지용 타임스탬프
@@ -385,6 +419,28 @@ def main():
             _save(POS_PATH, positions)
             _save(STRIKES_PATH, strikes)
 
+            # ★ 2026-08-09: 신규상장 모의 롱 청산 점검 (dry-run 전용, 실주문 없음)
+            for nsym in list(newlisting_positions.keys()):
+                npos = newlisting_positions[nsym]
+                nt = tick.get(nsym)
+                npx = nt[0] if nt else npos["entry_price"]
+                stop_hit = npx <= npos["entry_price"] * (1 - NEWLISTING_STOP_PCT/100)
+                expired = now >= npos["exit_ts"]
+                if not stop_hit and not expired:
+                    continue
+                nreason = f"스탑-{NEWLISTING_STOP_PCT:.0f}%" if stop_hit else f"{NEWLISTING_HOLD_H}h만기"
+                npnl_pct = (npx/npos["entry_price"] - 1)*100
+                nnew = not NEWLISTING_TRADES_PATH.exists()
+                with open(NEWLISTING_TRADES_PATH, "a", newline="", encoding="utf-8") as f:
+                    w = csv.DictWriter(f, fieldnames=["entry_time","exit_time","symbol","pump_2h","entry_price","exit_price","pnl_pct","reason"])
+                    if nnew: w.writeheader()
+                    w.writerow(dict(entry_time=npos["entry_iso"], exit_time=datetime.now(KST).isoformat(),
+                                     symbol=nsym, pump_2h=npos["pump"], entry_price=npos["entry_price"],
+                                     exit_price=npx, pnl_pct=round(npnl_pct,2), reason=nreason))
+                log.info(f"[모의:신규상장롱] {nsym} @{npx:g} {nreason} pnl={npnl_pct:+.2f}%(모의, 실주문없음)")
+                del newlisting_positions[nsym]
+            _save(NEWLISTING_POS_PATH, newlisting_positions)
+
             # ★ 마진잔고 헬스체크. 2026-07-22: get_margin_usdt()가 이제 API실패 시 None(0.0과 구분)을
             #   반환하도록 수정됨 — 예전엔 이 함수가 실패해도 조용히 0.0을 반환해 "마이너스 잔고(타 엔진
             #   정상 차입)"와 "진짜 API장애"를 구분 못 하고 216회 연속 "IP차단 의심" 오진 알림을 보낸 사건
@@ -465,6 +521,18 @@ def main():
                 if px6 > 0: px = px6
                 ret2h = ret6h   # 기록용(LOOKBACK_H시간 상승률)
                 vr = 0.0
+
+                # ★ 2026-08-09: 신규상장 급등은 되돌림 논리가 안 맞음(TUTUSDT 2연패 계기, 상장빔은
+                # 하이프성이라 계속 갈 수 있음) — 숏 스킵하고 대신 모의 롱만 기록(실주문 없음, dry-run).
+                if is_recent_listing(coin, listing_age_cache):
+                    if sym not in newlisting_positions and len(newlisting_positions) < 10:
+                        newlisting_positions[sym] = {
+                            "coin": coin, "entry_price": px, "pump": round(ret6h,1),
+                            "entry_iso": datetime.now(KST).isoformat(),
+                            "exit_ts": now + NEWLISTING_HOLD_H*3600,
+                        }
+                        log.info(f"[모의:신규상장롱] {sym} {LOOKBACK_H}h+{ret6h:.0f}% 신규상장 감지 → 숏 스킵, 모의롱 진입(실주문없음)")
+                    continue
 
                 use_margin = coin in UNIVERSE_SET
                 if use_margin:
@@ -549,6 +617,7 @@ def main():
             # 신호탐지 루프에서 이번 사이클의 now로 이미 판정 끝남(cooldown.get(sym,0) > now), 무관.
             cooldown = {k: v for k, v in cooldown.items() if v > time.time()}
             _save(COOLDOWN_PATH, cooldown)
+            _save(LISTING_AGE_CACHE_PATH, listing_age_cache)
         except Exception as e:
             log.error(f"루프오류: {e}")
         time.sleep(POLL_SEC)

@@ -80,6 +80,9 @@ VOL_MULT = 0.0            # 거래량 필터 미사용 (검증 결과 불필요)
 HOLD_H = 48
 STOP_PCT = 40.0           # 진입가 대비 +40% 상승 시 손절(2배 청산선 +50% 안쪽)
 COOLDOWN_H = 12           # 코인당 재진입 쿨다운
+STRIKE_BLACKLIST_H = 24*7  # ★ 2026-08-09: 같은 코인이 연속 2회 스탑(-40%)에 걸리면 7일 블랙리스트
+                            # (TUTUSDT 2연패 계기 — 신호가 특정 코인과 구조적으로 안 맞을 가능성 대응,
+                            # 48h만기 청산은 정상 승리로 취급해 연속카운트 리셋)
 MARGIN_PER_TRADE = 100.0  # 증거금(상한과 동일). 실제 사용은 min(잔고,상한)
 # ★ 2026-07-27: 실전표본 확보속도 문제(하루 신호 2~3건인데 대부분 누적노출초과로 차단) —
 #   Gemini/ChatGPT/Manus 3개 AI 교차검증 후 채택: 선물폴백 경로만 건당 사이즈를 줄여
@@ -95,6 +98,7 @@ FUT_MARGIN_PER_TRADE = 25.0
 BUF_PATH = ROOT / "data" / "margin_short_buf.json"
 POS_PATH = ROOT / "data" / "margin_short_pos.json"
 TRADES_PATH = ROOT / "data" / "margin_short_trades.csv"
+STRIKES_PATH = ROOT / "data" / "margin_short_coin_strikes.json"  # 코인별 연속 스탑 카운트
 COOLDOWN_PATH = ROOT / "data" / "margin_short_cooldown.json"  # ★ 2026-07-22(감사 발견): 재시작 시
 # cooldown이 메모리 전용이라 초기화되던 문제 — positions와 동일하게 디스크 영속화.
 
@@ -273,6 +277,7 @@ def main():
     cooldown = _load(COOLDOWN_PATH, {})
     now0 = time.time()
     cooldown = {k: v for k, v in cooldown.items() if v > now0}   # 만료된 항목 정리(파일 무한증가 방지)
+    strikes = _load(STRIKES_PATH, {})
     last_refresh = 0.0
     last_fut_refresh = 0.0
     last_capcfg_alert = 0.0   # ★ engine_caps_usdt 설정누락 알림 스팸방지용 타임스탬프
@@ -364,9 +369,21 @@ def main():
                 log.warning(f"★{venue_tag}숏 청산 {sym} @{px:g} {reason} pnl={pnl_pct:+.2f}%({pnl_usdt:+.2f}USDT) → {cres.get('live') and '실청산' or cres}")
                 try: notify.send(f"📈 {venue_tag}숏 청산 {sym} {reason} pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT)")
                 except Exception: pass
+                # ★ 2026-08-09: 코인별 연속 스탑 카운트 — 2연속이면 7일 블랙리스트(TUTUSDT 2연패 계기)
+                coin_key = pos["coin"]
+                if stop_hit:
+                    strikes[coin_key] = strikes.get(coin_key, 0) + 1
+                    if strikes[coin_key] >= 2:
+                        cooldown[sym] = now + STRIKE_BLACKLIST_H * 3600
+                        log.warning(f"★{coin_key} 연속 {strikes[coin_key]}회 스탑 → 7일 블랙리스트")
+                        try: notify.send(f"⛔ {coin_key} 연속 {strikes[coin_key]}회 손절 — 7일간 신규진입 제외")
+                        except Exception: pass
+                else:
+                    strikes[coin_key] = 0
                 del positions[sym]
 
             _save(POS_PATH, positions)
+            _save(STRIKES_PATH, strikes)
 
             # ★ 마진잔고 헬스체크. 2026-07-22: get_margin_usdt()가 이제 API실패 시 None(0.0과 구분)을
             #   반환하도록 수정됨 — 예전엔 이 함수가 실패해도 조용히 0.0을 반환해 "마이너스 잔고(타 엔진

@@ -52,7 +52,9 @@ log = logging.getLogger(__name__)
 
 FAPI = "https://fapi.binance.com"; BASE = "https://api.binance.com"
 ENGINE = "mshort"
-POLL_SEC = 300
+POLL_SEC = 60  # ★ 2026-08-10: 300→60. 3개AI(ChatGPT·제미나이·Manus) 공통권고 —
+# 트레일링 반납폭이 정확히 안 잡히는 원인이 폴링 갭(TST#2: MFE+25%→5분새 -7%까지 못 잡음)
+# 이었다는 데 만장일치. 트레일링 숫자(15%p/10%p) 자체는 과최적화 우려로 보류, 폴링만 개선.
 
 # ★★ 2026-07-12 시간대 전수 스위프 (2h~72h × 문턱20~60%, 40조합, 날짜클러스터 t) — 24h는 나쁜 선택이었음.
 #   짧은 시간대일수록 압도적으로 좋음. 길수록 급격히 악화(24h t1.69 → 48h t0.10 → 72h t0.06).

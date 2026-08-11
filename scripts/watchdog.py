@@ -58,6 +58,11 @@ _last_active_ts: dict[str, float] = {}
 # 무더기 행상태 감지로 재시작될 때마다 전부 알림이 가서 스팸이 됨. 실제 돈이 걸린 봇만
 # 알림 보내고 나머지는 로그(watchdog.log)에만 남기도록 축소.
 ALERT_ON_RESTART = {"margin_short_trader", "accum_trader", "core_leveraged", "core_trader"}
+# ★ 2026-08-12: 한 번 체크하고 정상종료(exit=0)하는 설계인 봇들 — while True 루프 없이
+# "체크→종료"를 반복하는 구조라 watchdog이 매 사이클(~50초)마다 "죽음 감지→재시작"으로
+# 오인해 콘솔/로그가 스팸으로 도배됨(버그 아님, by design). 이 목록에 있으면 exit=0일 때만
+# 로그레벨을 낮추고 문구도 완화 — 진짜 비정상 종료(exit!=0)는 여전히 WARNING으로 남음.
+ONESHOT_BOTS = {"margin_manual_long_trader"}
 
 BOTS = {
     "tg_bot":                ROOT / "scripts" / "tg_bot.py",
@@ -375,7 +380,10 @@ def main() -> None:
         for name, script in BOTS.items():
             proc = procs[name]
             if proc.poll() is not None:  # 프로세스 종료됨
-                log.warning(f"[{name}] 죽음 감지 (exit={proc.returncode}) → 재시작")
+                if name in ONESHOT_BOTS and proc.returncode == 0:
+                    log.info(f"[{name}] 주기점검 완료 → 재기동")
+                else:
+                    log.warning(f"[{name}] 죽음 감지 (exit={proc.returncode}) → 재시작")
                 if name in ALERT_ON_RESTART:
                     send_tg(f"⚠️ <b>{name}</b> 종료됨 → 자동 재시작")
                 write_session()  # 재시작 시점 기록 업데이트

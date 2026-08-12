@@ -97,7 +97,11 @@ MARGIN_PER_TRADE = 100.0  # 증거금(상한과 동일). 실제 사용은 min(�
 # ★ 2026-08-02: MMT 건이 크게 터진 것(+55%대)을 보고 사용자가 사이즈 확대 요청.
 #   07-27 축소 취지(표본 확보)는 유지하되 소폭만: 20→25(25%↑). 4건 동시 캡 80→100,
 #   4건 동시손절 최대손실 64→80USDT로 일일손실한도(100) 안쪽 유지.
-FUT_MARGIN_PER_TRADE = 25.0
+# ★ 2026-08-12: 27건 시점 흐름이 좋아진 것 보고 사용자가 재차 확대 요청(25→30, 20%↑).
+#   엔진상한 125USDT라 동시진입 5건→4건으로 줄지만 무리한 증액은 아님. 다만 이 시점의
+#   증액 자체가 "좋은 결과 보고 사이즈 키우기" 패턴 — 51건 freeze 취지와 다소 배치되는
+#   점은 기록해둠(would_change_log.md 참고).
+FUT_MARGIN_PER_TRADE = 30.0
 
 BUF_PATH = ROOT / "data" / "margin_short_buf.json"
 POS_PATH = ROOT / "data" / "margin_short_pos.json"

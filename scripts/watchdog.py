@@ -105,7 +105,10 @@ BOTS = {
     # "lead_ws_trader" 폐기 (2026-07-02): 716건 비용후 -0.252%/t-4.07 통계적 확정손실 (#41)
     # "momentum_trader" 폐기 (2026-07-03): 90일 절제백테 전 구간(15분~168H) 전부 음수(t-17.5~-1.3),
     # 실측 15건도 -46.21%p 일치 확인. "오른 코인 추격"이 알트에서 전 타임프레임 역효과 (#42)
-    "volaccum_trader":       ROOT / "scripts" / "volaccum_trader.py",  # 거래량매집 단타 (#43, 20~80배 스파이크 모의, TP+3% SL-3% 2H)
+    # "volaccum_trader" 폐기 (2026-08-12): 256건 누적 승률42.6%/평균-0.85% — 4개AI
+    # (ChatGPT·Perplexity·제미나이·MiniMax) 만장일치 "통계적 확정손실" 판정. 후속 아이디어
+    # 없는 한 재개 안 함.
+    # "volaccum_trader":       ROOT / "scripts" / "volaccum_trader.py",  # 거래량매집 단타 (#43, 20~80배 스파이크 모의, TP+3% SL-3% 2H)
     # "spike_tracker" 제거 (2026-06-30): volume_radar와 역할 겹침, 불필요
     "upbit_notice_monitor":  ROOT / "scripts" / "upbit_notice_monitor.py",   # 업비트 상장공지 감지지연 측정 (순수로깅·매매0)
     "binance_notice_monitor": ROOT / "scripts" / "binance_notice_monitor.py", # 바이낸스 상장공지 감지지연 측정 (순수로깅·매매0)

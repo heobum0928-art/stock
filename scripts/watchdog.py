@@ -57,7 +57,10 @@ _last_active_ts: dict[str, float] = {}
 # ★ 2026-08-08: 재시작 텔레그램 알림 과다 문제 — 조용한 로깅/모의매매 봇들이 30~45분 간격
 # 무더기 행상태 감지로 재시작될 때마다 전부 알림이 가서 스팸이 됨. 실제 돈이 걸린 봇만
 # 알림 보내고 나머지는 로그(watchdog.log)에만 남기도록 축소.
-ALERT_ON_RESTART = {"margin_short_trader", "accum_trader", "core_leveraged", "core_trader"}
+# ★ 2026-08-13: margin_short_trader/accum_trader도 "행상태 감지→강제재시작"이 정상 유휴
+# 구간에서도 자주 떠서 텔레그램 스팸으로 느껴진다는 사용자 피드백 → 완전 제거(로그만).
+# 실제 위험 알림(🚨 보호장치 감시, 캐스케이드 체결)은 별도 경로라 영향 없음.
+ALERT_ON_RESTART = set()
 # ★ 2026-08-12: 한 번 체크하고 정상종료(exit=0)하는 설계인 봇들 — while True 루프 없이
 # "체크→종료"를 반복하는 구조라 watchdog이 매 사이클(~50초)마다 "죽음 감지→재시작"으로
 # 오인해 콘솔/로그가 스팸으로 도배됨(버그 아님, by design). 이 목록에 있으면 exit=0일 때만

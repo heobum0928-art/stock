@@ -274,6 +274,7 @@ COMMANDS = {
 HELP_TEXT = (
     "<b>[명령어]</b>\n"
     "/status — 빗썸 봇 상태 · 포지션 · 쿨다운\n"
+    "상태     — 보유 포지션 현황(숏/롱 손익표)\n"
     "/trades — 오늘 거래 내역\n"
     "/pnl    — 최근 7일 손익\n"
     "/kis    — KIS 계좌 · 보유 종목\n"
@@ -343,6 +344,13 @@ def main() -> None:
                 reply = COMMANDS[cmd]()
             elif cmd in ("/help", "/start"):
                 reply = HELP_TEXT
+            elif text_raw in ("상태", "포지션", "/상태", "/포지션"):
+                try:
+                    from scripts import telegram_status
+                    reply = telegram_status.build_text()
+                except Exception as e:
+                    log.error(f"포지션현황 조회 오류: {e}")
+                    reply = f"❌ 포지션현황 조회 중 오류: {e}"
             else:
                 reply = f"모르는 명령어: {text_raw}\n" + HELP_TEXT
 

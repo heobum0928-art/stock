@@ -313,11 +313,14 @@ PRESCREEN_24H = 5.0         # 1차 스크리닝: 24h가 이 미만이면 klines 
 
 
 def log_trade(row):
+    # ★ 2026-08-16(사용자 요청): "이 종목이 확실한가"는 표본이 안 쌓이지만(종목당 1~4회뿐),
+    # "이런 특징의 코인이 잘 되는가"(신규상장 경과일·유동성 카테고리)는 여러 종목을 묶어서
+    # 볼 수 있어 100~200건대에서 답이 나올 가능성이 큼 — 지금부터 메타데이터 축적.
     new = not TRADES_PATH.exists()
     with open(TRADES_PATH, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["entry_time","exit_time","symbol","pump_2h","vol_mult",
                                            "entry_price","exit_price","margin_usdt","pnl_pct","pnl_usdt","live","reason",
-                                           "btc_entry","btc_exit","mfe_pct","mae_pct"])
+                                           "btc_entry","btc_exit","mfe_pct","mae_pct","listing_age_days","qvol_24h"])
         if new: w.writeheader()
         w.writerow(row)
 
@@ -442,7 +445,8 @@ def main():
                                margin_usdt=pos["margin"], pnl_pct=round(pnl_pct,2), pnl_usdt=round(pnl_usdt,2),
                                live=pos["live"], reason=f"{reason}[{venue_tag}]",
                                btc_entry=pos.get("btc_entry"), btc_exit=btc_exit,
-                               mfe_pct=mfe_pct, mae_pct=mae_pct))
+                               mfe_pct=mfe_pct, mae_pct=mae_pct,
+                               listing_age_days=pos.get("listing_age_days"), qvol_24h=pos.get("qvol_24h")))
                 log.warning(f"★{venue_tag}숏 청산 {sym} @{px:g} {reason} pnl={pnl_pct:+.2f}%({pnl_usdt:+.2f}USDT) → {cres.get('live') and '실청산' or cres}")
                 try: notify.send(f"📈 {venue_tag}숏 청산 {sym} {reason} pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT)")
                 except Exception: pass
@@ -607,7 +611,8 @@ def main():
                                           "qty": res["qty"], "margin": margin, "venue": "margin",
                                           "pump": round(ret2h,1), "vr": round(vr,1),
                                           "exit_ts": now + HOLD_H*3600, "entry_iso": datetime.now(KST).isoformat(), "live": True,
-                                          "btc_entry": tick.get("BTCUSDT", (None,))[0]}
+                                          "btc_entry": tick.get("BTCUSDT", (None,))[0],
+                                          "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
                         log.warning(f"★실전 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개")
                         try: notify.send(f"📉 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% (증거금{margin:.0f}USDT)")
                         except Exception: pass
@@ -644,7 +649,8 @@ def main():
                                           "pump": round(ret2h,1), "vr": round(vr,1),
                                           "exit_ts": now + HOLD_H*3600, "entry_iso": datetime.now(KST).isoformat(), "live": True,
                                           "btc_entry": tick.get("BTCUSDT", (None,))[0],
-                                          "stop_order_id": res.get("stop_order_id")}
+                                          "stop_order_id": res.get("stop_order_id"),
+                                          "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
                         if not res.get("stop_verified"):
                             log.error(f"🚨 {sym} 서버측 스탑주문 검증 실패 — 무보호 상태일 수 있음, 수동 확인 필요")
                         log.warning(f"★실전 선물숏 진입(마진대출폴백) {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개 (서버스탑={res.get('stop_order_id')})")

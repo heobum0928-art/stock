@@ -11,18 +11,28 @@
 Upbit과 동일 포맷)로 최근 캔들을 가져와 기존 파일(오래된순 정렬)에 병합. 신규 파일은
 안 만들고(기존에 있던 코인만 갱신), 날짜 중복은 건너뜀.
 
+부가기능(2026-08-16, 사용자 요청): 갱신 직후 BTC가 SMA50에 근접(±NEAR_PCT% 이내)했으면
+텔레그램으로 조기경보 — 지금은 추세전환 후에만 로그가 남는데, 전환 "임박"을 미리 알아야
+core_trader류 실전전환 여부·담보재배분 같은 대비를 준비할 시간이 생김. 코인당 1일 1회만
+알림(스팸 방지), core_trader.py와 동일 BAND(1%) 밴드 적용해 실제 신호기준과 일치시킴.
+
 Run: python scripts/update_daily_candles.py (1회 실행, 스케줄러가 주기 호출)
 """
 import sys, json, time, logging
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+KST = timezone(timedelta(hours=9))
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from bithumb.client import BithumbClient
+
+NEAR_PCT = 3.0   # SMA까지 이 % 이내로 근접하면 조기경보
+ALERT_STATE_PATH = ROOT / "data" / "sma_proximity_alert_state.json"
 
 Path("logs").mkdir(exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [CANDLE-UPD] %(message)s",
@@ -75,6 +85,54 @@ def main():
         pass
     log.info(f"갱신 완료 — 총 {len(files)}개 중 {updated}개 갱신, 실패 {len(failed)}개"
               f"{f' ({failed[:10]})' if failed else ''} | BTC 최신봉: {latest_btc}")
+
+    check_sma_proximity()
+
+
+def check_sma_proximity():
+    """BTC가 SMA50/200에 근접(±NEAR_PCT% 이내)하면 텔레그램 조기경보. 1일 1회만."""
+    try:
+        d = json.loads((CANDLE_DIR / "BTC_1d.json").read_text(encoding="utf-8"))
+        closes = [float(c["trade_price"]) for c in d]
+        if len(closes) < 200:
+            return
+        cur = closes[-1]
+        s50 = sum(closes[-50:]) / 50
+        s200 = sum(closes[-200:]) / 200
+    except Exception as e:
+        log.warning(f"SMA 근접도 확인 실패: {e}")
+        return
+
+    today = datetime.now(KST).date().isoformat()
+    state = {}
+    try:
+        state = json.loads(ALERT_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    msgs = []
+    for label, sma in (("SMA50(스카우트30%)", s50), ("SMA200(풀매수100%)", s200)):
+        dist_pct = (cur / sma - 1) * 100
+        below = cur < sma
+        key = f"{label}:{today}"
+        if abs(dist_pct) <= NEAR_PCT and key not in state:
+            state[key] = True
+            direction = "위로 돌파 임박(상승추세 전환 근접)" if below else "아래로 이탈 임박(하락추세 전환 근접)"
+            msgs.append(f"⚠️ BTC {label} 근접 — {direction} (현재 {cur:,.0f}, {label.split('(')[0]} {sma:,.0f}, 거리 {dist_pct:+.1f}%)")
+
+    if msgs:
+        # 오래된 상태 정리(최근 3일만 유지, 파일 무한증가 방지)
+        cutoff = (datetime.now(KST).date() - timedelta(days=3)).isoformat()
+        state = {k: v for k, v in state.items() if k.rsplit(":", 1)[-1] >= cutoff}
+        tmp = ALERT_STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(ALERT_STATE_PATH)
+        try:
+            from bithumb import notify
+            notify.send("[추세조기경보]\n" + "\n".join(msgs), force=True)
+        except Exception: pass
+        for m in msgs:
+            log.warning(m)
 
 
 if __name__ == "__main__":

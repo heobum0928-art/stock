@@ -164,11 +164,19 @@ def rebalance(s, target_frac, price, reason):
 def live_rebalance(guard, target_frac, price):
     """실전 모드 — 목표 명목노출까지 가드 통해 실주문.
     증거금 = min(선물잔고, 엔진상한) × target_frac. 명목 = 증거금 × LEVERAGE.
-    ★ 잔고가 상한보다 커도 상한만큼만 사용(소액검증 안전) — 상한이 진입을 막지 않고 규모만 제한."""
+    ★ 잔고가 상한보다 커도 상한만큼만 사용(소액검증 안전) — 상한이 진입을 막지 않고 규모만 제한.
+    ★ 2026-08-15(버그헌터 발견): 반환값이 성공(live/skip=이미 목표달성)인지 실패(dry/error)인지
+    구분해 반환 — 호출부가 실패 시 로컬 state 저장을 건너뛰고 다음 루프에서 재시도하게 함.
+    이전엔 호출 성공여부와 무관하게 항상 state를 갱신해서, 캡차단·API실패 시 "청산했다고
+    착각하고 실제로는 포지션이 거래소에 남아있는" 영구 괴리 위험이 있었음."""
     from bithumb.binance_guard import load_config
     usdt = get_futures_usdt()
+    if usdt is None:
+        log.warning("[LIVE] 선물잔고 조회 실패(API) — 거래 보류, 다음 루프 재시도")
+        return False
     if usdt <= 0:
-        log.warning("[LIVE] 선물잔고 0 또는 조회실패 — 거래 보류"); return
+        log.warning(f"[LIVE] 선물잔고 {usdt:.2f}(0 이하) — 거래 보류")
+        return False
     cap = load_config().get("engine_caps_usdt", {}).get(ENGINE, 0)
     margin_base = min(usdt, cap)                    # 상한 안으로 제한
     target_notional = margin_base * target_frac * LEVERAGE
@@ -180,6 +188,11 @@ def live_rebalance(guard, target_frac, price):
         try:
             notify.send(f"[CORE-LEV] ★실전 리밸런싱 {target_frac:.0%}×{LEVERAGE:.0f}배 명목{target_notional:.0f}USDT @{price:,.0f}")
         except Exception: pass
+    if res.get("dry") or res.get("error"):
+        try: notify.send(f"🚨 [CORE-LEV] 리밸런싱 실패/차단 → {res} — state 유지, 다음 루프 재시도")
+        except Exception: pass
+        return False
+    return True   # live(실주문 성공) 또는 skip(이미 목표 근접, 변화<5USDT라 사실상 동기화됨)
 
 
 def main():
@@ -214,8 +227,10 @@ def main():
             if live:   # ★ 실전 (가드 armed) — 바이낸스 실주문
                 guard = BinanceGuard(ENGINE)
                 if new_state != s["state"]:
-                    live_rebalance(guard, target_frac, price)
-                    s["state"] = new_state; save_state(s)
+                    if live_rebalance(guard, target_frac, price):
+                        s["state"] = new_state; save_state(s)
+                    # 실패 시 state 그대로 유지 — 다음 루프에서 new_state!=s["state"]가 다시
+                    # 성립해 자동 재시도됨 (성공할 때까지 계속 시도, 조용히 포기하지 않음)
                 else:
                     pos = get_position()
                     log.info(f"[LIVE] 유지 {s['state']} | BTCUSDT {price:,.2f} | 실포지션 {pos['amt']:.4f}BTC "

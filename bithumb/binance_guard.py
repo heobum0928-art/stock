@@ -143,17 +143,20 @@ def _signed(method, path, params=None):
     raise ValueError(method)
 
 
-def get_futures_usdt() -> float:
-    """선물 USDT 지갑잔고(가용). 실패 시 0."""
+def get_futures_usdt() -> float | None:
+    """선물 USDT 지갑잔고(가용). ★ 2026-08-15(버그헌터 발견): margin_guard.get_margin_usdt()가
+    2026-07-22에 'API실패 시 None(0.0과 구분)'으로 고친 것과 동일 이유로 이 함수도 통일 —
+    실패와 진짜 0을 구분 못 하면 호출부가 "잔고 0"과 "조회 실패"를 똑같이 취급해 진단이 안 됨."""
     try:
         r = _signed("GET", "/fapi/v2/balance")
         if r.status_code == 200:
             for a in r.json():
                 if a["asset"] == "USDT":
                     return float(a["availableBalance"])
+        log.warning(f"잔고조회 실패(status={r.status_code})")
     except Exception as e:
         log.warning(f"잔고조회 실패: {e}")
-    return 0.0
+    return None
 
 
 def get_position() -> dict:

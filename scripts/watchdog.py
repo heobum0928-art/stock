@@ -88,6 +88,13 @@ BOTS = {
     "margin_manual_long_trader": ROOT / "scripts" / "margin_manual_long_trader.py",  # ★재량롱(ETH/LTC) 실전 —
         # 2026-08-08: watchdog 미등록으로 8/7부터 5일간 프로세스 없이 방치됐던 것 발견·등록
         # (서버측 스탑은 걸려있어 자금 위험은 없었으나 트레일링/청산판단 로직이 안 돌고 있었음)
+        # ★ 2026-08-15(버그헌터 발견): 이 파일엔 __main__ 블록이 없어 watchdog이 실행해도
+        # import만 하고 즉시 종료(exit 0) — 08-08에 "watchdog 등록으로 청산로직 복구"라고
+        # 판단한 진단 자체가 틀렸음. 실제 트레일링/손절 감시는 tg_bot.py의 15초 폴링 루프
+        # (MANUAL_CHECK_INTERVAL_SEC)가 margin_manual_long_trader.check_positions()를 직접
+        # 호출하는 완전히 별개 경로로 동작 중(정상 작동 확인됨). 즉 지금 열린 포지션(LTC)이
+        # 방치된 건 아니지만, 이 watchdog 등록 자체는 30~60초마다 프로세스를 껐다 켜는 것 외엔
+        # 아무 보호도 안 함(placebo) — 진짜 안전망은 tg_bot 프로세스가 살아있는지 여부.
     "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",  # RSI>92+거래량3배 숏 (MARGINAL, forward 모의검증, 2026-07-12)
     "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15)
     "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",    # 하이브리드 약세현금/강세 BTC50%+알트Top3 (강세 forward 검증·모의)

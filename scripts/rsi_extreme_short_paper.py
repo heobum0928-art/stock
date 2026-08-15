@@ -76,6 +76,10 @@ FUTURES_ENGINE = "rsishort_fut"
 BORROW_PATH = ROOT / "data" / "_borrowable_all.txt"
 POS_PATH = ROOT / "data" / "rsi_short_pos.json"
 TRADES_PATH = ROOT / "data" / "rsi_short_trades.csv"
+# ★ 2026-08-15(버그헌터 발견): margin_short_trader.py의 2026-07-22 수정과 동일 이유 —
+# cooldown이 메모리 전용이라 재시작 시 초기화됨(행상태 감지로 794회 재시작 이력, ~30분
+# 간격). 설계상 COOLDOWN_H(8시간) 재진입금지가 사실상 무력화되고 있었음. 디스크 영속화.
+COOLDOWN_PATH = ROOT / "data" / "rsi_short_cooldown.json"
 
 
 def _load(p, d):
@@ -139,7 +143,10 @@ def log_trade(row):
 
 
 def main():
-    positions = _load(POS_PATH, {}); cooldown = {}
+    positions = _load(POS_PATH, {})
+    cooldown = _load(COOLDOWN_PATH, {})
+    now0 = time.time()
+    cooldown = {k: v for k, v in cooldown.items() if v > now0}   # 만료 항목 정리(파일 무한증가 방지)
     uni = universe()
     ls = live_status()
     mode = "🔴실전" if (ls["enabled"] and ENGINE in ls["armed"]) else "🔵모의(dry)"
@@ -266,6 +273,8 @@ def main():
                     except Exception: pass
 
             _save(POS_PATH, positions)
+            cooldown = {k: v for k, v in cooldown.items() if v > time.time()}
+            _save(COOLDOWN_PATH, cooldown)
         except Exception as e:
             log.error(f"루프오류: {e}")
         time.sleep(POLL_SEC)

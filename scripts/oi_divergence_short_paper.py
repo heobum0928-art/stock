@@ -58,6 +58,10 @@ COOLDOWN_H = 24
 
 POS_PATH = ROOT / "data" / "oi_div_paper_pos.json"
 TRADES_PATH = ROOT / "data" / "oi_div_paper_trades.csv"
+# ★ 2026-08-15(버그헌터 발견, 배포 당일 즉시 수정): rsi_extreme_short_paper.py에서 발견된
+# 것과 동일한 쿨다운 미영속화 패턴을 배포 시 그대로 복사했었음 — 재시작마다 초기화되면
+# 같은 코인이 COOLDOWN_H 안 지키고 중복 관측돼 51건 판단용 forward 표본이 오염될 수 있음.
+COOLDOWN_PATH = ROOT / "data" / "oi_div_paper_cooldown.json"
 
 
 def _load(p, d):
@@ -122,7 +126,9 @@ def log_trade(row):
 
 def main():
     positions = _load(POS_PATH, {})
-    cooldown = {}
+    cooldown = _load(COOLDOWN_PATH, {})
+    now0 = time.time()
+    cooldown = {k: v for k, v in cooldown.items() if v > now0}
     uni = perp_universe()
     log.info(f"OI다이버전스 숏 페이퍼 시작 — 선물유니버스 {len(uni)}코인, "
              f"{PUMP_WINDOW_H}h+{PUMP_MIN_PCT:.0f}%펌프 & OI변동<={OI_MAX_CHG_PCT:.0f}% → "
@@ -201,6 +207,8 @@ def main():
                     notify.send(f"🎯 OI다이버전스 모의숏 {sym} @{px:g} 펌프{price_chg:+.0f}% OI{oi_chg:+.1f}%")
                 except Exception: pass
             _save(POS_PATH, positions)
+            cooldown = {k: v for k, v in cooldown.items() if v > time.time()}
+            _save(COOLDOWN_PATH, cooldown)
         except Exception as e:
             log.error(f"루프오류: {e}")
         time.sleep(POLL_SEC)

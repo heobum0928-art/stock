@@ -37,8 +37,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import json as _json
 import requests
-from bithumb.margin_guard import MarginGuard, load_config, get_held
+from bithumb.margin_guard import MarginGuard, load_config, get_held, CONFIG
+
+
+def _shift_cap_to_mshort(amount_usdt: float) -> float:
+    """manuallong 캡을 줄이고 그만큼 mshort 캡을 늘려 담보를 회수(재배분, global_cap 불변)."""
+    cfg = _json.loads(CONFIG.read_text(encoding="utf-8"))
+    caps = cfg.setdefault("engine_caps_usdt", {})
+    caps["manuallong"] = max(0.0, caps.get("manuallong", 0) - amount_usdt)
+    caps["mshort"] = caps.get("mshort", 0) + amount_usdt
+    CONFIG.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return caps["mshort"]
 
 KST = timezone(timedelta(hours=9))
 ENGINE = "manuallong"
@@ -268,6 +279,10 @@ def check_positions() -> list:
             trail_level = pos["peak_price"] * (1 - pos["trail_pct"] / 100)
             if price <= trail_level:
                 exit_reason = f"트레일(고점+{favorable_pct:.1f}%→{(price/pos['entry_price']-1)*100:+.1f}%)"
+        # ★ 2026-08-14 사용자요청: ETH 수익전환 시 담보 회수해서 mshort 여유 확보
+        # (armed 여부와 무관하게 독립 체크 — elif 체인에 묶으면 armed=True인데 트레일 미도달 시 못 걸림)
+        if exit_reason is None and pos.get("close_on_profit") and price > pos["entry_price"]:
+            exit_reason = "수익전환 정리(사용자요청, 담보회수)"
 
         if exit_reason is None:
             changed = True
@@ -314,6 +329,12 @@ def check_positions() -> list:
         mode = "🔴" if is_live else "🔵"
         pnl_note = f" ({pnl_usdt:+.2f}USDT)" if is_live else ""
         msgs.append(f"{mode} 재량롱 청산 {coin} @{price:,.6g}\n{exit_reason}\n손익: {pnl_pct:+.2f}%{pnl_note}")
+        if pos.get("close_on_profit"):
+            try:
+                moved = _shift_cap_to_mshort(pos["margin_usdt"])
+                msgs.append(f"↪️ manuallong 담보 {pos['margin_usdt']:.0f}USDT → mshort 캡 이동 (신규 {moved:.0f}USDT)")
+            except Exception as e:
+                log.error(f"mshort 캡 이동 실패: {e}")
         del positions[coin]
         changed = True
 

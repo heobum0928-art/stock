@@ -106,6 +106,13 @@ FUT_MARGIN_PER_TRADE = 30.0
 BUF_PATH = ROOT / "data" / "margin_short_buf.json"
 POS_PATH = ROOT / "data" / "margin_short_pos.json"
 TRADES_PATH = ROOT / "data" / "margin_short_trades.csv"
+# ★ 2026-08-15: 엔진상한(캡)에 막혀 진입 못 한 신호를 "그림자 기록"으로 남김. 전략 로직은
+#   전혀 건드리지 않고 관찰만 — 51건 도달 시 "캡 때문에 놓친 신호들이 실제로 얼마나 벌었을지"를
+#   추측이 아니라 데이터로 판단하기 위함(에이전트 권고). 같은 심볼은 캡이 풀릴 때까지 매 사이클
+#   반복 신호가 뜨므로 SHADOW_DEDUP_H 동안 1회만 기록.
+SHADOW_PATH = ROOT / "data" / "margin_short_shadow.csv"
+SHADOW_DEDUP_H = 6
+_shadow_seen: dict[str, float] = {}
 STRIKES_PATH = ROOT / "data" / "margin_short_coin_strikes.json"  # 코인별 연속 스탑 카운트
 COOLDOWN_PATH = ROOT / "data" / "margin_short_cooldown.json"  # ★ 2026-07-22(감사 발견): 재시작 시
 # cooldown이 메모리 전용이라 초기화되던 문제 — positions와 동일하게 디스크 영속화.
@@ -309,6 +316,26 @@ def log_trade(row):
                                            "btc_entry","btc_exit","mfe_pct","mae_pct"])
         if new: w.writeheader()
         w.writerow(row)
+
+
+def log_shadow(sym, pump_pct, price, blocked_by, open_exposure, cap):
+    """★ 2026-08-15: 캡에 막혀 진입 못 한 신호 기록(순수 관찰, 주문 없음).
+    51건 도달 시 '놓친 신호가 실제로 어떻게 됐을지'를 사후 검증하기 위한 데이터."""
+    now = time.time()
+    if now - _shadow_seen.get(sym, 0) < SHADOW_DEDUP_H * 3600:
+        return
+    _shadow_seen[sym] = now
+    try:
+        new = not SHADOW_PATH.exists()
+        with open(SHADOW_PATH, "a", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=["signal_time", "symbol", "pump_pct", "signal_price",
+                                               "blocked_by", "open_exposure", "cap"])
+            if new: w.writeheader()
+            w.writerow(dict(signal_time=datetime.now(KST).isoformat(), symbol=sym,
+                            pump_pct=round(pump_pct, 1), signal_price=price, blocked_by=blocked_by,
+                            open_exposure=round(open_exposure, 1), cap=cap))
+    except Exception as e:
+        log.warning(f"그림자기록 실패 {sym}: {e}")
 
 
 def main():
@@ -596,6 +623,7 @@ def main():
                     fut_margin = min(FUT_MARGIN_PER_TRADE, fcap)
                     if open_fut + fut_margin > fcap:
                         log.info(f"선물폴백 진입 보류 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): 누적노출 {open_fut:.0f}+{fut_margin:.0f}>엔진상한 {fcap}")
+                        log_shadow(sym, ret6h, px, "engine_cap", open_fut, fcap)
                         continue
                     # ★ 2026-07-22: 마진 경로와 동일 이유로 get_futures_usdt() min() 클램프 제거.
                     #   선물지갑은 manuallong과 무관한 별도 지갑이라 마이너스가 될 일은 없지만, API

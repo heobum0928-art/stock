@@ -10,6 +10,7 @@ Run: python scripts/tg_bot.py
 """
 import sys
 import os
+import csv
 import json
 import time
 import socket
@@ -199,6 +200,46 @@ def cmd_pnl() -> str:
     return "\n".join(lines)
 
 
+MARGIN_SHORT_TRADES = Path(__file__).resolve().parent.parent / "data" / "margin_short_trades.csv"
+
+
+def _usdt_krw_rate() -> float:
+    try:
+        r = requests.get("https://api.bithumb.com/v1/ticker", params={"markets": "KRW-USDT"}, timeout=5)
+        return float(r.json()[0]["trade_price"])
+    except Exception:
+        return 1415.0   # 조회 실패 시 근사치 폴백
+
+
+def cmd_calendar() -> str:
+    """★ 2026-08-16: 마진숏 일별 손익을 원화로 텔레그램에서 바로 확인(브라우저 없이)."""
+    if not MARGIN_SHORT_TRADES.exists():
+        return "<b>[손익달력]</b>\n데이터 없음"
+    with open(MARGIN_SHORT_TRADES, encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return "<b>[손익달력]</b>\n데이터 없음"
+
+    rate = _usdt_krw_rate()
+    daily = {}
+    for r in rows:
+        d = r["exit_time"][:10]
+        entry = daily.setdefault(d, {"usdt": 0.0, "cnt": 0})
+        entry["usdt"] += float(r["pnl_usdt"])
+        entry["cnt"] += 1
+
+    lines = ["<b>[손익달력]</b> margin_short " + f"{len(rows)}건", "<pre>"]
+    total_krw = 0.0
+    for d in sorted(daily):
+        krw = daily[d]["usdt"] * rate
+        total_krw += krw
+        lines.append(f"{d[5:]:<6}{krw:>+11,.0f}  {daily[d]['cnt']}건")
+    lines.append(f"{'합계':<6}{total_krw:>+11,.0f}원")
+    lines.append("</pre>")
+    lines.append(f"(환율 1USDT={rate:,.0f}원 적용)")
+    return "\n".join(lines)
+
+
 def cmd_kis() -> str:
     try:
         import os as _os
@@ -266,6 +307,7 @@ COMMANDS = {
     "/trades": cmd_trades,
     "/pnl":    cmd_pnl,
     "/kis":    cmd_kis,
+    "/달력":     cmd_calendar,
     "/재량":     cmd_manual_status,
     "/재량숏":    cmd_margin_manual_status,
     "/재량롱":    cmd_margin_manual_long_status,
@@ -275,6 +317,7 @@ HELP_TEXT = (
     "<b>[명령어]</b>\n"
     "/status — 빗썸 봇 상태 · 포지션 · 쿨다운\n"
     "상태     — 보유 포지션 현황(숏/롱 손익표)\n"
+    "달력     — 마진숏 일별 손익 한화표\n"
     "/trades — 오늘 거래 내역\n"
     "/pnl    — 최근 7일 손익\n"
     "/kis    — KIS 계좌 · 보유 종목\n"
@@ -351,6 +394,12 @@ def main() -> None:
                 except Exception as e:
                     log.error(f"포지션현황 조회 오류: {e}")
                     reply = f"❌ 포지션현황 조회 중 오류: {e}"
+            elif text_raw in ("달력", "캘린더"):
+                try:
+                    reply = cmd_calendar()
+                except Exception as e:
+                    log.error(f"손익달력 조회 오류: {e}")
+                    reply = f"❌ 손익달력 조회 중 오류: {e}"
             else:
                 reply = f"모르는 명령어: {text_raw}\n" + HELP_TEXT
 

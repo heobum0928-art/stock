@@ -58,6 +58,11 @@ POLL_SEC = 60
 REAL_POS_PATH = ROOT / "data" / "margin_short_pos.json"
 SHADOW_POS_PATH = ROOT / "data" / "bc_rule_shadow_pos.json"
 SHADOW_TRADES_PATH = ROOT / "data" / "bc_rule_shadow_trades.csv"
+# ★ 2026-08-17(버그 발견): 실전 포지션은 열려있는데 그림자가 c룰로 먼저 청산하면(realtime
+# 다른 규칙이라 청산시점이 다름), shadow에서 del된 뒤 다음 루프에서 REAL_POS_PATH에 여전히
+# 있는 걸 "새 진입"으로 재미러링해서 매 사이클(1분) 무한 재진입→재청산 반복(PORTAL 119회
+# 중복 발생). 심볼+진입시각 조합을 영구 기록해 같은 실전 진입을 두 번 미러링하지 않게 함.
+PROCESSED_PATH = ROOT / "data" / "bc_rule_shadow_processed.json"
 
 # 실전과 동일(비교의 기준선을 맞추기 위해 그대로 사용)
 HOLD_H = 48.0
@@ -97,10 +102,11 @@ def log_trade(row):
         w.writerow(row)
 
 
-def mirror_new_positions(shadow):
+def mirror_new_positions(shadow, processed):
     real = _load(REAL_POS_PATH, {})
     for sym, rp in real.items():
-        if sym in shadow:
+        key = f"{sym}:{rp['entry_ts']}"
+        if sym in shadow or key in processed:
             continue
         shadow[sym] = {
             "coin": rp.get("coin", sym.replace("USDT", "")),
@@ -122,6 +128,7 @@ def mirror_new_positions(shadow):
 
 def main():
     shadow = _load(SHADOW_POS_PATH, {})
+    processed = _load(PROCESSED_PATH, {})
     log.info(f"b/c룰 모의 병렬검증 시작 — 실전 진입 미러링, MAE-{MAE_HALF_CLOSE_PCT:.0f}%반절+스탑-{MAE_HALF_CLOSE_NEW_STOP_PCT:.0f}%타이트닝 / "
              f"MAE-{MAE_FULL_CLOSE_PCT:.0f}%전량청산 / {TIME_CHECK_H:.0f}h시점 불리시 조기청산 / 순수모의(매매0)")
     try:
@@ -131,7 +138,7 @@ def main():
 
     while True:
         try:
-            shadow = mirror_new_positions(shadow)
+            shadow = mirror_new_positions(shadow, processed)
             now = time.time()
 
             for sym in list(shadow.keys()):
@@ -195,9 +202,11 @@ def main():
                                    pnl_pct=round(total_pnl_pct, 2), pnl_usdt=round(total_pnl_usdt, 2),
                                    reason=exit_reason, mirrors_real=True))
                     log.warning(f"[모의청산] {sym} @{px:g} {exit_reason} 총pnl={total_pnl_pct:+.2f}%({total_pnl_usdt:+.2f}USDT)")
+                    processed[f"{sym}:{p['entry_ts']}"] = True
                     del shadow[sym]
 
             _save(SHADOW_POS_PATH, shadow)
+            _save(PROCESSED_PATH, processed)
         except Exception as e:
             log.error(f"루프오류: {e}")
         time.sleep(POLL_SEC)

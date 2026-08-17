@@ -205,8 +205,13 @@ def main():
                     processed[f"{sym}:{p['entry_ts']}"] = True
                     del shadow[sym]
 
-            _save(SHADOW_POS_PATH, shadow)
+            # ★ 2026-08-17(버그헌터 발견): processed를 먼저 저장해야 함. 순서가 반대(shadow
+            #   먼저)면, 그 사이(shadow저장 성공~processed저장 전)에 프로세스가 죽었을 때
+            #   재시작 후 "shadow엔 없는데 processed에도 없는" 상태가 돼서 Case#1과 똑같이
+            #   무한 재미러링이 재발함. processed를 먼저 저장하면 최악의 경우도 "중복 로그
+            #   한 줄"에서 그침(무한루프로 안 번짐) — 원칙4(실패모드 카탈로그) 적용.
             _save(PROCESSED_PATH, processed)
+            _save(SHADOW_POS_PATH, shadow)
         except Exception as e:
             log.error(f"루프오류: {e}")
         time.sleep(POLL_SEC)

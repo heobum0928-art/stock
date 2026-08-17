@@ -21,6 +21,11 @@ KST = timezone(timedelta(hours=9))
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+# ★ 2026-08-17(watchdog 신뢰성 감사): logs/·data/ 디렉터리가 없으면 아래 FileHandler·LOCKFILE
+# 쓰기가 즉시 크래시함 — 방어적으로 미리 생성(이미 있으면 no-op).
+(ROOT / "logs").mkdir(parents=True, exist_ok=True)
+(ROOT / "data").mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [WD][%(levelname)s] %(message)s",
@@ -50,7 +55,34 @@ HANG_CHECK_OVERRIDE_SEC = {
     "core_trader": 5400,        # CHECK_SEC=1800 × 3
     "core_leveraged": 5400,     # CHECK_SEC=1800 × 3 (실전봇이라 너무 길게는 안 둠)
     "hybrid_trader": 43200,     # CHECK_SEC=21600 × 2
+    # ★ 2026-08-17: 위 세 봇과는 원인이 다른 오탐 — 이 둘은 폴링주기 자체는 60초로 짧은데,
+    # 사이클당 실연산(requests.get 응답대기+간단한 float비교+JSON저장)이 너무 가벼워서 CPU
+    # user+system 시간이 30분 동안 0.05초(HANG_CPU_EPSILON)를 못 넘김 — 실측 로그로 확인:
+    # bc_rule_shadow_paper는 포지션을 실제로 계속 추적 중인 동안에도(HEMIUSDT 3시간+ 보유)
+    # 30~31분 간격으로 계속 "행상태"로 오판돼 강제재시작당함(logs/watchdog.log 08:56~13:11
+    # 연속 8회). 두 봇 다 순수모의(매매 API 미호출, 실거래자금 무관)라 문턱을 넉넉히 늘려도
+    # 실위험은 없음 — 진짜 몇 시간씩 죽는 경우는 아래 "죽음 감지"(proc.poll) 경로가 별도로 잡음.
+    "bc_rule_shadow_paper": 21600,      # I/O바운드라 CPU기반 행감지가 구조적으로 안 맞음, 6h 여유
+    "oi_divergence_short_paper": 21600, # 동일 원인(logs/watchdog.log 10:59~13:01 연속 5회 오탐 확인)
 }
+# ★ 2026-08-17(watchdog 신뢰성 감사, 사용자 지적 "watchdog가 왜 맨날 문제가 되는거야"로 착수):
+# 위 두 봇에서 발견한 원인(I/O바운드 경량폴링이라 CPU기반 행감지 문턱을 구조적으로 못 넘음)이
+# 사실상 전체 함대에 재현되는 걸 로그포렌식으로 확인 — logs/watchdog.log 최근 33.5시간 창에서
+# 아래 목록 전부 봇당 ~64~65회(≈30분 간격) "행상태 감지"가 찍힘. 전부 매매 API 미호출(순수모의·
+# 순수로깅·알림전용)이라 문턱을 늘려도 실거래 위험 없음. margin_short_trader·accum_trader도 같은
+# 패턴이 확인됐지만 실전(real-money) 봇이라 사용자 확인 없이는 안 건드림(would_change_log.md 참고).
+_PURE_PAPER_LOGGING_BOTS = [
+    "retest_trader", "em_trader", "igniter_alert", "ml_trader", "rsi_extreme_short_paper",
+    "crossex_logger", "volume_radar", "rsi_trader", "futures_logger",
+    "upbit_notice_monitor", "binance_notice_monitor", "bithumb_notice_monitor",
+    "reaction_paper_trader", "orderflow_logger", "breadth_monitor",
+]
+for _b in _PURE_PAPER_LOGGING_BOTS:
+    HANG_CHECK_OVERRIDE_SEC.setdefault(_b, 21600)
+# tg_bot: 그 자체는 매매 안 하지만 margin_manual_long_trader의 실질적 안전망(15초 폴링으로
+# 트레일링/손절을 직접 처리)이라 6시간까지는 안 늘리고 core_trader/core_leveraged와 같은
+# 90분으로 절충 — 오탐 소음은 없애되 진짜 행 상태는 비교적 빨리 잡음.
+HANG_CHECK_OVERRIDE_SEC["tg_bot"] = 5400
 _last_cpu_time: dict[str, float] = {}
 _last_active_ts: dict[str, float] = {}
 
@@ -149,8 +181,8 @@ def send_tg(text: str) -> None:
                 json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
                 timeout=5,
             )
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"[send_tg] 실패: {e}")
 
 
 EXTRA_ARGS: dict[str, list[str]] = {
@@ -206,8 +238,8 @@ def start_bot(name: str, script: Path) -> subprocess.Popen:
         for lf in [ROOT / "data" / "alt_monitor.pid", ROOT / "data" / "bot.lock"]:
             try:
                 lf.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"[{name}] lockfile 정리 실패({lf}): {e}")
     log.info(f"[{name}] 시작")
     extra = EXTRA_ARGS.get(name, [])
     # CREATE_NO_WINDOW: 콘솔창 안 띄움(봇은 파일로 로깅 → stdout 불필요). 창 클러터 방지.
@@ -346,7 +378,10 @@ def _acquire_singleton() -> None:
         atexit.register(s.close)
     except OSError:
         s.close()
-        log.warning("포트 47230 이미 사용 중 — watchdog 이미 실행 중이므로 새 인스턴스 종료")
+        # ★ 2026-08-17(watchdog 신뢰성 감사): 본 프로세스 PID를 같이 남겨야 "왜 watchdog가
+        # 2개 떠있었지" 같은 사후조사가 로그만으로 가능함(이번에 PID까지 직접 추적하느라
+        # 워크플로우 하나를 통째로 써야 했음).
+        log.warning(f"포트 47230 이미 사용 중(본 프로세스 PID={os.getpid()}) — watchdog 이미 실행 중이므로 새 인스턴스 종료")
         sys.exit(0)
 
 
@@ -402,6 +437,7 @@ def main() -> None:
                 if name in ALERT_ON_RESTART:
                     send_tg(f"⚠️ <b>{name}</b> 종료됨 → 자동 재시작")
                 write_session()  # 재시작 시점 기록 업데이트
+                proc.wait()  # 이미 죽은 프로세스지만 핸들 명시적 반납(누수 방지, 행상태분기와 통일)
                 time.sleep(2)
                 procs[name] = start_bot(name, script)
                 _reset_hang_tracking(name, procs[name], time.time())

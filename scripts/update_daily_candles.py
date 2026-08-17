@@ -57,7 +57,6 @@ def main():
             log.warning(f"{coin}: 기존 파일 읽기 실패({e}), 스킵")
             failed.append(coin)
             continue
-        seen = {c.get("candle_date_time_kst") for c in existing}
         try:
             fresh = client.get_daily_candles(f"KRW-{coin}", count=FETCH_COUNT)  # newest-first
             if not isinstance(fresh, list):
@@ -67,10 +66,20 @@ def main():
             failed.append(coin)
             time.sleep(SLEEP_SEC)
             continue
-        new_rows = [c for c in fresh if c.get("candle_date_time_kst") not in seen]
-        if new_rows:
-            merged = existing + list(reversed(new_rows))  # oldest-first로 합침
-            merged.sort(key=lambda c: c.get("candle_date_time_kst", ""))
+        # ★ 2026-08-17(버그헌터 발견): 기존엔 "이미 있는 날짜는 스킵"이라, 당일(아직 진행중인)
+        #   캔들이 하루 첫 실행 시점(대략 새벽 02:27) 스냅샷에 영구 고정되고 이후 3회 실행이
+        #   전부 무시되는 문제가 있었음(core_leveraged 등 armed 실전엔진의 SMA가 종일 새벽값
+        #   기준으로 계산됨). 날짜별 dict로 관리해 항상 최신 fetch로 덮어쓰기 — 마감된 과거일은
+        #   같은 값이 반복 오므로 사실상 no-op, 당일(진행중)만 매번 갱신됨.
+        by_date = {c.get("candle_date_time_kst"): c for c in existing}
+        changed = False
+        for c in fresh:
+            d = c.get("candle_date_time_kst")
+            if by_date.get(d) != c:
+                by_date[d] = c
+                changed = True
+        if changed:
+            merged = sorted(by_date.values(), key=lambda c: c.get("candle_date_time_kst", ""))
             tmp = f.with_suffix(".tmp")
             tmp.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
             tmp.replace(f)

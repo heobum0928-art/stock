@@ -55,6 +55,13 @@ HANG_CHECK_OVERRIDE_SEC = {
     "core_trader": 5400,        # CHECK_SEC=1800 × 3
     "core_leveraged": 5400,     # CHECK_SEC=1800 × 3 (실전봇이라 너무 길게는 안 둠)
     "hybrid_trader": 43200,     # CHECK_SEC=21600 × 2
+    # ★ 2026-08-17(watchdog 신뢰성 감사, 사용자 확인 후 적용): margin_short_trader·accum_trader
+    # 도 다른 실전봇들과 동일하게 30분 문턱을 못 넘겨 오탐 재시작 중이었음(logs/watchdog.log
+    # 33.5시간 창에서 각 65회 확인) — 이 기능이 원래 잡으려던 진짜 행상태(2026-07-26 DEXE
+    # 손절지연 손실 사고)에 대한 감지력은 유지하되 오탐만 줄이도록 core_trader/core_leveraged와
+    # 같은 90분으로 절충(사용자가 "30분 유지" 대신 이 옵션 선택, 2026-08-17).
+    "margin_short_trader": 5400,
+    "accum_trader": 5400,
     # ★ 2026-08-17: 위 세 봇과는 원인이 다른 오탐 — 이 둘은 폴링주기 자체는 60초로 짧은데,
     # 사이클당 실연산(requests.get 응답대기+간단한 float비교+JSON저장)이 너무 가벼워서 CPU
     # user+system 시간이 30분 동안 0.05초(HANG_CPU_EPSILON)를 못 넘김 — 실측 로그로 확인:
@@ -79,6 +86,9 @@ _PURE_PAPER_LOGGING_BOTS = [
 ]
 for _b in _PURE_PAPER_LOGGING_BOTS:
     HANG_CHECK_OVERRIDE_SEC.setdefault(_b, 21600)
+# alt_momentum_long_paper: 자체 CHECK_SEC=21600(hybrid_trader와 동일 6시간 일봉기반) —
+# 문턱을 CHECK_SEC와 똑같이 두면 경계오탐(상단 2026-07-26 주석 참고) 나므로 2배로 여유.
+HANG_CHECK_OVERRIDE_SEC["alt_momentum_long_paper"] = 43200
 # tg_bot: 그 자체는 매매 안 하지만 margin_manual_long_trader의 실질적 안전망(15초 폴링으로
 # 트레일링/손절을 직접 처리)이라 6시간까지는 안 늘리고 core_trader/core_leveraged와 같은
 # 90분으로 절충 — 오탐 소음은 없애되 진짜 행 상태는 비교적 빨리 잡음.
@@ -130,6 +140,7 @@ BOTS = {
     "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",  # RSI>92+거래량3배 숏 (MARGINAL, forward 모의검증, 2026-07-12)
     "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15)
     "bc_rule_shadow_paper": ROOT / "scripts" / "bc_rule_shadow_paper.py",  # b/c룰(손실축소) 모의 병렬검증 — 실전 진입 미러링, 순수모의, 2026-08-16
+    "alt_momentum_long_paper": ROOT / "scripts" / "alt_momentum_long_paper.py",  # 알트 모멘텀 Top3 롱 모의(hybrid_trader 알트선별 로직, BTC강세게이트 없이 상시가동, 100건 목표, 순수모의, 2026-08-17)
     "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",    # 하이브리드 약세현금/강세 BTC50%+알트Top3 (강세 forward 검증·모의)
     "crossex_logger":        ROOT / "scripts" / "crossex_logger.py",   # 교차거래소 선행신호 로거 (순수로깅·매매0, 격리)
     "volume_radar":          ROOT / "scripts" / "volume_radar.py",     # 거래대금 급증 레이더 (순수로깅·매매0, 격리)

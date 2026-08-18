@@ -172,6 +172,10 @@ def get_position() -> dict:
                 mark = float(p.get("markPrice", 0) or 0)
                 return {"amt": amt, "entry": entry, "mark": mark,
                         "notional": abs(amt) * mark, "unrealized": float(p.get("unRealizedProfit", 0) or 0)}
+        else:
+            # ★ 버그헌터 감사 발견(2026-08-18): 비200 응답이 무로그로 "진짜 0포지션"과
+            #   동일하게 취급됐음 — get_futures_position()은 이미 이 패턴으로 로깅함.
+            log.warning(f"포지션조회 실패(status={r.status_code}): {r.text[:200]}")
     except Exception as e:
         log.warning(f"포지션조회 실패: {e}")
     return {"amt": 0.0, "entry": 0.0, "mark": 0.0, "notional": 0.0, "unrealized": 0.0}

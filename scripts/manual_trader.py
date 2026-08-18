@@ -21,7 +21,7 @@
 검증 게이트 (실거래 전환 전 통과 필수): 모의 표본 n≥10~20건, 비용(0.5%) 차감 후 평균 기대값 > 0.
 포지션 data/manual_pos.json | 거래기록 data/manual_trades.csv | 로그 logs/manual_trader.log
 """
-import sys, json, csv, logging, statistics
+import sys, json, csv, logging, statistics, time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -107,6 +107,24 @@ def _measure_volatility_pct(client, market: str) -> float:
     return statistics.mean(ranges) if ranges else 2.0
 
 
+def _poll_executed_volume(client, uuid, max_wait: float = 6.0):
+    """market_buy 직후 실제 체결수량 짧게 폴링(버그헌터 감사 발견, 2026-08-18) —
+    live_guard._actual_fill_funds와 동일 철학: 즉시응답은 대개 state=wait라 신뢰 불가.
+    실패/시간초과 시 None → 호출부가 즉시응답값으로 폴백(진입 자체는 절대 막지 않음)."""
+    if not uuid: return None
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        try:
+            od = client.get_order(uuid)
+            if od.get("state") == "done":
+                v = od.get("executed_volume")
+                return float(v) if v is not None else None
+        except Exception:
+            pass
+        time.sleep(1.0)
+    return None
+
+
 def enter(coin: str, krw: float = None) -> str:
     """재량 진입. 성공/차단 여부와 계산된 SL/TRAIL을 텍스트로 반환(텔레그램 응답용)."""
     coin = coin.upper().strip()
@@ -134,6 +152,13 @@ def enter(coin: str, krw: float = None) -> str:
     guard = LiveGuard(ENGINE)
     res = guard.execute_buy(client, market, krw)
     is_live = bool(res.get("live"))
+    fill_volume = None
+    if is_live:
+        # ★ 버그헌터 감사 발견(2026-08-18): execute_sell()엔 이미 체결폴링(_actual_fill_funds)이
+        #   있는데 매수경로만 즉시응답(대개 state=wait, executed_volume 미확정)을 그대로 썼음.
+        fill_volume = _poll_executed_volume(client, res.get("result", {}).get("uuid"))
+        if fill_volume is None:
+            fill_volume = res.get("result", {}).get("executed_volume")  # 기존 폴백 동작 유지
 
     positions[coin] = {
         "market": market,
@@ -148,7 +173,7 @@ def enter(coin: str, krw: float = None) -> str:
         "armed": False,
         "entered_at": datetime.now(KST).isoformat(),
         "live": is_live,
-        "volume": res.get("result", {}).get("executed_volume") if is_live else None,
+        "volume": fill_volume if is_live else None,
     }
     _save_positions(positions)
     log.warning(f"진입 {coin} @{entry_price:,.2f} SL-{sl_pct:.1f}% TRAIL{trail_pct:.1f}%(arm+{arm_pct:.1f}%) "
@@ -205,6 +230,17 @@ def check_positions() -> list[str]:
             res = guard.execute_sell_soft(client, pos["market"], float(pos["volume"]), krw_hint=pos["krw"])
         else:
             res = {"dry": True}
+        # ★ 버그헌터 감사 발견(2026-08-18): res를 전혀 안 봐서 매도 실패해도(또는 volume이
+        #   None이라 애초에 매도 시도조차 안 됐어도) 무조건 손익기록+포지션삭제됐음 —
+        #   margin_manual_long_trader.py와 동일한 재시도 패턴으로 통일.
+        if pos["live"] and not res.get("live"):
+            fails = pos.get("close_fails", 0) + 1
+            pos["close_fails"] = fails
+            log.error(f"청산 매도 실패(포지션 유지, 재시도예정) {coin} → {res} (연속{fails}회)")
+            if fails in (1, 3) or fails % 10 == 0:
+                msgs.append(f"🚨 {coin} 청산 매도 실패 → {res} (연속{fails}회) — 확인 필요")
+            changed = True
+            continue
         pnl_pct = (price / pos["entry_price"] - 1) * 100
         pnl_krw = pos["krw"] * pnl_pct / 100
         if pos["live"]:

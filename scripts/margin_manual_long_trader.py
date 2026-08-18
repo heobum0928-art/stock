@@ -160,6 +160,11 @@ def enter(coin: str, margin_usdt: float = None) -> str:
     guard = MarginGuard(ENGINE)
     res = guard.open_long(coin, margin_usdt)
     is_live = bool(res.get("live"))
+    if is_live and res.get("price"):
+        # ★ 버그헌터 감사 발견(2026-08-18): 주문 전 조회가를 그대로 entry_price로 썼음 —
+        #   add_to_position()은 이미 실제체결가(res["price"])를 쓰도록 돼있는데 enter()만
+        #   그 패턴이 누락돼있었음. 이후 stop_price·pnl 계산 전부가 이 값을 물려받음.
+        entry_price = res["price"]
     stop_price = entry_price * (1 - sl_pct / 100)   # ★롱: 가격 하락이 손실 → 하방 손절
 
     stop_order_id = None

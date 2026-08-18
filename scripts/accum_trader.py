@@ -182,7 +182,20 @@ def main():
                                     bal = float(a.get("balance", 0) or 0)
                                     if bal > 0: sell_vol = min(p["vol"], bal)
                         except Exception: pass
-                        g = LiveGuard("accum"); g.execute_sell(c, f"KRW-{coin}", sell_vol, krw_hint=cur*sell_vol)
+                        g = LiveGuard("accum")
+                        res = g.execute_sell(c, f"KRW-{coin}", sell_vol, krw_hint=cur*sell_vol)
+                        # ★ margin_manual_long_trader.py와 동일 안전패턴: 청산 실패 시 포지션
+                        #   유지+재시도(버그헌터 감사 발견, 2026-08-18) — 이전엔 반환값을 아예
+                        #   안 봐서 매도 실패해도 무조건 손익기록+포지션삭제됐음.
+                        if not res.get("live"):
+                            fails = p.get("close_fails", 0) + 1
+                            p["close_fails"] = fails
+                            save_pos(pos)
+                            log.error(f"[{mode}] 청산 매도 실패(포지션 유지, 재시도예정) {coin} → {res} (연속{fails}회)")
+                            if fails in (1, 3) or fails % 10 == 0:
+                                try: notify.send(f"🚨 매집단타 청산 실패 {coin} → {res} (연속{fails}회) — 확인 필요")
+                                except Exception: pass
+                            continue
                         g.record_realized((cur-p["entry"])*sell_vol)
                     log.warning(f"[{mode}] 청산 {coin} @{cur:,.4f} PnL={pnl*100:+.2f}% | {reason} (고점+{(p['highest']/p['entry']-1)*100:.1f}%)")
                     try: notify.send(f"🎯 매집단타 청산 {coin} {pnl*100:+.1f}% [{reason}] ({mode})")
@@ -199,6 +212,10 @@ def main():
                         g = LiveGuard("accum"); res = g.execute_buy(c, f"KRW-{coin}", entry_krw)
                         if res.get("dry"):
                             log.info(f"진입 차단(가드) {coin}: {res.get('reason')}"); continue
+                        if not res.get("live"):
+                            # ★ 버그헌터 감사 발견(2026-08-18): dry만 체크하고 error는 안 봐서,
+                            #   매수가 실제로 실패해도 가상 포지션이 생성되던 문제.
+                            log.error(f"진입 매수 실패 {coin}: {res}"); continue
                         vol = entry_krw*(1-0.0004)/cur   # 대략(쿠폰)
                     else:
                         vol = entry_krw/cur

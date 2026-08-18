@@ -146,6 +146,10 @@ def enter(coin: str, margin_usdt: float = None) -> str:
     guard = MarginGuard(ENGINE)
     res = guard.open_short(coin, margin_usdt)
     is_live = bool(res.get("live"))
+    if is_live and res.get("price"):
+        # ★ 버그헌터 감사 발견(2026-08-18): margin_manual_long_trader.py enter()와 동일한
+        #   버그 — 주문 전 조회가 대신 실제체결가를 써야 함.
+        entry_price = res["price"]
 
     positions[coin] = {
         "coin": coin, "entry_price": entry_price, "margin_usdt": margin_usdt,

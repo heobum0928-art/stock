@@ -137,12 +137,22 @@ def latest_price(ticker: str) -> float:
     return cl[-1] if cl else 0.0
 
 
+def btc_mom_pct() -> float | None:
+    """BTC의 동일 20일 모멘텀 — 판단(entry/exit)엔 안 쓰고 로그에만 남김(margin_short의
+    btc_entry/btc_exit와 동일 패턴). 표본 쌓이면 '코인모멘텀-BTC모멘텀=상대강도' 사후분석용
+    (버그헌터 에이전트 권고, 2026-08-18 — ACE가 모멘텀1위였는데도 스탑맞은 사례 계기)."""
+    cl = _closes("BTC")
+    if not cl or len(cl) < MOM_LB + 1:
+        return None
+    return (cl[-1] / cl[-1 - MOM_LB] - 1) * 100
+
+
 def log_trade(row):
     new = not TRADES_PATH.exists()
     with open(TRADES_PATH, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["entry_time", "exit_time", "symbol", "entry_price", "exit_price",
-                                           "mom_pct_at_entry", "notional_usdt", "pnl_pct", "pnl_usdt",
-                                           "reason", "mfe_pct", "mae_pct"])
+                                           "mom_pct_at_entry", "btc_mom_pct_at_entry", "notional_usdt",
+                                           "pnl_pct", "pnl_usdt", "reason", "mfe_pct", "mae_pct"])
         if new: w.writeheader()
         w.writerow(row)
 
@@ -205,9 +215,11 @@ def main():
                         # 덜 해로움).
                         del positions[sym]
                         _save(POS_PATH, positions)
+                        _bm = pos.get("btc_mom_pct_at_entry")  # 2026-08-17 이전 진입한 포지션엔 없을 수 있음
                         log_trade(dict(entry_time=pos["entry_iso"], exit_time=datetime.now(KST).isoformat(),
                                        symbol=sym, entry_price=entry, exit_price=px,
                                        mom_pct_at_entry=round(pos["mom_pct_at_entry"], 2),
+                                       btc_mom_pct_at_entry=round(_bm, 2) if _bm is not None else "",
                                        notional_usdt=NOTIONAL_USDT, pnl_pct=round(pnl, 2),
                                        pnl_usdt=round(pnl_usdt, 2), reason=reason,
                                        mfe_pct=round(mfe, 2), mae_pct=round(mae, 2)))
@@ -230,6 +242,7 @@ def main():
                         "entry_ts": now,
                         "entry_iso": datetime.now(KST).isoformat(),
                         "mom_pct_at_entry": mom,
+                        "btc_mom_pct_at_entry": btc_mom_pct(),
                         "max_p": px, "min_p": px,
                     }
                     log.warning(f"[모의진입] {sym} @{px:g} 모멘텀{mom:+.1f}%(20일) Top{ALT_N}진입")

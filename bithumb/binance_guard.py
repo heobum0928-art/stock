@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 import requests
 import yaml
+from bithumb import notify
 
 KST = timezone(timedelta(hours=9))
 ROOT = Path(__file__).resolve().parent.parent

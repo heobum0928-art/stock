@@ -193,8 +193,8 @@ def check_exits(c: BithumbClient, tk_all: dict):
         if p.get("live") and p.get("volume", 0) > 0:
             g = LiveGuard("newlisting")
             res = g.execute_sell(c, f"KRW-{coin}", p["volume"], krw_hint=cur*p["volume"])
-            if res.get("error"):
-                log.error(f"[실전] 매도 실패 {coin}: {res.get('error')} — 포지션 유지")
+            if not res.get("live"):
+                log.error(f"[실전] 매도 실패 {coin}: {res.get('error') or res.get('reason')} — 포지션 유지")
                 try: notify.send(f"🚨 신규상장 매도 실패 {coin} [{reason}] — 포지션 유지")
                 except Exception: pass
                 continue

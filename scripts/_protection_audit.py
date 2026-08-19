@@ -18,6 +18,10 @@ from bithumb import notify
 
 MSHORT_POS = ROOT / "data" / "margin_short_pos.json"
 LONG_POS = ROOT / "data" / "margin_manual_long_pos.json"
+# ★ 2026-08-19(울트라감사 발견): rsi_extreme_short_paper(엔진 rsishort)는 파일명에 paper가
+# 붙어있지만 armed_engines에 등록된 실거래 봇이다 — 그런데 이 감사의 대상 파일 목록에
+# 아예 없어서, 그 봇이 연 실전 마진숏은 무보호여도 아무도 몰랐다(THETAUSDT 실사례).
+RSI_SHORT_POS = ROOT / "data" / "rsi_short_pos.json"
 
 
 def check_futures_order(sym: str, order_id) -> str:
@@ -57,16 +61,26 @@ def check_margin_order(sym: str, order_id) -> str:
 def main():
     problems = []
 
-    if MSHORT_POS.exists():
-        positions = json.loads(MSHORT_POS.read_text(encoding="utf-8"))
+    # ★ 2026-08-19: venue != "futures"면 continue라 마진 경로가 통째로 감사에서 빠져있었음.
+    # 마진숏은 애초에 서버측 스탑을 거는 코드 자체가 없으므로(margin_guard에 숏용
+    # place_protective_stop 미구현) 조회조차 못 하지만, "무보호"라는 사실 자체는 알려야 한다.
+    for label, path in (("마진숏", MSHORT_POS), ("RSI극단숏", RSI_SHORT_POS)):
+        if not path.exists():
+            continue
+        positions = json.loads(path.read_text(encoding="utf-8"))
         for sym, pos in positions.items():
-            if not pos.get("live") or pos.get("venue") != "futures":
+            if not pos.get("live"):
                 continue
-            status = check_futures_order(sym, pos.get("stop_order_id"))
-            if status == "check_failed":
-                print(f"({sym} 조회 실패 — 네트워크 문제 추정, 이번 회차는 판정 보류)")
-            elif status != "ok":
-                problems.append(f"🚨 마진숏 {sym} 무보호({status}) — 서버측 손절 없음, 봇 감시에만 의존 중")
+            if pos.get("venue") == "futures":
+                status = check_futures_order(sym, pos.get("stop_order_id"))
+                if status == "check_failed":
+                    print(f"({sym} 조회 실패 — 네트워크 문제 추정, 이번 회차는 판정 보류)")
+                elif status != "ok":
+                    problems.append(f"🚨 {label} {sym} 무보호({status}) — 서버측 손절 없음, 봇 감시에만 의존 중")
+            else:
+                status = check_margin_order(sym, pos.get("stop_order_id"))
+                if status != "ok":
+                    problems.append(f"🚨 {label} {sym}(마진) 무보호({status}) — 서버측 손절 없음, 봇 다운 시 손절 미실행")
 
     if LONG_POS.exists():
         positions = json.loads(LONG_POS.read_text(encoding="utf-8"))

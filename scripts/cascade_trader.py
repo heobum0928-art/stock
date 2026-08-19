@@ -196,8 +196,8 @@ def main():
                             res = g.execute_sell_soft(c, f"KRW-{coin}", sell_vol, krw_hint=cur*sell_vol)
                         else:
                             res = g.execute_sell(c, f"KRW-{coin}", sell_vol, krw_hint=cur*sell_vol)
-                        if res.get("error"):
-                            log.error(f"[실전] 매도 실패 {coin}: {res.get('error')} — 포지션 유지")
+                        if not res.get("live"):
+                            log.error(f"[실전] 매도 실패 {coin}: {res.get('error') or res.get('reason')} — 포지션 유지")
                             try: notify.send(f"🚨 캐스케이드 매도 실패 {coin} [{reason}] {res.get('error')} — 포지션 유지")
                             except Exception: pass
                             continue

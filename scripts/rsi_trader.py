@@ -162,8 +162,8 @@ def main():
                         except Exception: pass
                         g = LiveGuard("rsi")
                         res = g.execute_sell(c, f"KRW-{coin}", sell_vol, krw_hint=cur*sell_vol)
-                        if res.get("error"):
-                            log.error(f"[실전] 매도 실패 {coin}: {res.get('error')} — 포지션 유지")
+                        if not res.get("live"):
+                            log.error(f"[실전] 매도 실패 {coin}: {res.get('error') or res.get('reason')} — 포지션 유지")
                             try: notify.send(f"🚨 RSI반등 매도 실패 {coin} [{reason}] — 포지션 유지")
                             except Exception: pass
                             continue

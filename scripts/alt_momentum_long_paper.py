@@ -173,6 +173,10 @@ def main():
         try:
             now = time.time()
             today = datetime.now(KST).date().isoformat()
+            # 2026-08-19(백테스트 에이전트 발견): 이 사이클에서 청산된 심볼 추적 —
+            # 청산 직후 같은 사이클의 신규진입 단계에서 그 코인이 여전히 Top3면
+            # 당일 즉시 재진입되는 걸 막기 위함(스탑맞고 바로 되사는 패턴 방지).
+            just_closed = set()
 
             # 1) 포지션 점검(청산) — 매 사이클
             if positions:
@@ -215,6 +219,7 @@ def main():
                         # 덜 해로움).
                         del positions[sym]
                         _save(POS_PATH, positions)
+                        just_closed.add(sym)
                         _bm = pos.get("btc_mom_pct_at_entry")  # 2026-08-17 이전 진입한 포지션엔 없을 수 있음
                         log_trade(dict(entry_time=pos["entry_iso"], exit_time=datetime.now(KST).isoformat(),
                                        symbol=sym, entry_price=entry, exit_price=px,
@@ -231,7 +236,7 @@ def main():
                 top = rank_alts()
                 for coin, mom in top:
                     sym = f"{coin}USDT"
-                    if sym in positions:
+                    if sym in positions or sym in just_closed:
                         continue
                     px = latest_price(coin)
                     if px <= 0:

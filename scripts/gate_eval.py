@@ -54,6 +54,10 @@ GATE4_CUTOFF = datetime(2026, 8, 16, 23, 0, tzinfo=KST)   # 원문 "확인 방�
 GATE4_CUTOFF_REAL = datetime(2026, 8, 15, 23, 21, tzinfo=KST)  # 실제 캡전환(병기용)
 TARGET_N = 51
 
+# 기준2 여유분 계산용 (실거래 봇의 현재 사이징·손절폭. 예측이 아니라 시나리오 표시용)
+FUT_MARGIN, LEV, STOP_PCT = 30.0, 2.0, 40.0
+AVG_WIN = 30.0 * 2.0 * 0.18      # 실측 평균 익절 +18%(증거금 대비 명목 기준)
+
 
 class UnitMismatch(Exception):
     """단위/잣대/표본이 다른 값을 비교하려 할 때. 2026-08-20 사고의 재발 방지선."""
@@ -79,6 +83,23 @@ class Metric:
     def __ge__(self, other):
         self._check(other)
         return self.value >= other.value
+
+    def improved_over(self, baseline):
+        """기준선 대비 개선/유지 판정. 표본 크기는 당연히 다르므로(기준선 39건 vs
+        현재 46건) 표본만 예외로 두고 단위·잣대는 그대로 검사한다.
+
+        ★ 2026-08-20 코드리뷰 지적 반영: 원래 이 자리에서 현재값에 기준선의 표본
+        라벨("39건")을 그대로 붙여 가드를 통과시켰다. 8/20 사고(46건 값을 39건
+        기준값과 비교)와 **정확히 같은 오라벨**을 방지 장치 안에서 저지른 것이다.
+        표본이 다른 건 정상이므로, 라벨을 위조하지 말고 여기서 명시적으로 허용한다."""
+        for attr, label in (("unit", "단위"), ("instrument", "잣대")):
+            a, b = getattr(self, attr), getattr(baseline, attr)
+            if a != b:
+                raise UnitMismatch(
+                    f"{label}가 다른 값을 기준선과 비교했습니다: {a} vs {b}\n"
+                    f"  현재: {self}\n  기준선: {baseline}\n"
+                    f"  → 기준선도 같은 {label}로 재계산해야 합니다.")
+        return self.value >= baseline.value
 
     def __str__(self):
         v = f"{self.value:+.3f}" if self.unit == "USDT" else f"{self.value:+.2f}{self.unit}"
@@ -116,9 +137,12 @@ def check_preconditions():
         if code != 0 or not out.strip():
             problems.append(f"  ✗ {d} — git에 커밋된 적 없음 (백업 안 됨, 수정해도 흔적 없음)")
             continue
+        # git이 실패하면 out이 빈 문자열이라 "무결"로 통과해버린다(fail-open).
+        # 무결성 검사가 조용히 꺼지는 것이 가장 나쁜 실패이므로 code도 함께 본다.
         code, out, _ = _git("diff", "--stat", "HEAD", "--", d)
-        if out.strip():
-            problems.append(f"  ✗ {d} — 커밋본과 다름 (커밋 후 수정됨)")
+        if code != 0 or out.strip():
+            problems.append(f"  ✗ {d} — 커밋본과 다름 (커밋 후 수정됨)"
+                            if code == 0 else f"  ✗ {d} — git diff 실패(rc={code}), 무결성 확인 불가")
     if problems:
         refuse("사전확정 문서 상태 이상:\n" + "\n".join(problems) +
                "\n\n조치: 의도한 수정이면 커밋하고 다시 실행. "
@@ -165,19 +189,56 @@ def load():
 def find_contaminated(led):
     """원장 건별 오염 탐지 — ledger_reconcile이 시간창(exit+12h)으로 매칭하는데,
     같은 코인을 그 안에 다시 거래하면 앞 거래가 뒷 거래 손익까지 흡수한다.
-    총합은 맞지만 건별 값은 틀린다(2026-08-20 발견, 8쌍 14건)."""
+    총합은 맞지만 건별 값은 틀린다(2026-08-20 발견).
+
+    **체인(3건 이상 연쇄)을 하나로 묶어서 반환한다.** TSTUSDT가 실제로 그 케이스라
+    (18,20)(20,21)(21,23)로 쌍이 겹치는데, 쌍 단위로 합치면 #20·#21이 두 번씩
+    계산돼 표본이 부풀려진다(2026-08-20 코드리뷰 지적).
+
+    반환: [[i, j, ...], ...] — 각 리스트가 하나로 합쳐야 할 거래 인덱스 묶음."""
     def t(s):
         return datetime.fromisoformat(s).astimezone(KST)
-    pairs = []
+
+    parent = list(range(len(led)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    n_pairs = 0
     for i, a in enumerate(led):
         for j in range(i + 1, len(led)):
             b = led[j]
             if b["symbol"] != a["symbol"]:
                 continue
             if t(b["entry_time"]) <= t(a["exit_time"]) + timedelta(hours=12):
-                pairs.append((i, j))
-                break
-    return pairs
+                union(i, j)
+                n_pairs += 1
+            # break 없음 — 한 거래의 창이 같은 코인 후속 2건을 덮는 경우도 잡는다
+    groups = {}
+    for i in range(len(led)):
+        groups.setdefault(find(i), []).append(i)
+    return [g for g in groups.values() if len(g) > 1]
+
+
+def merge_groups(led, groups):
+    """오염 묶음을 하나의 관측치로 합치고(증거금도 합산), 나머지와 이어붙인다.
+    반환: (합쳐진 건당 수익률 리스트, 합쳐진 묶음 수)"""
+    skip = {i for g in groups for i in g}
+    merged = []
+    for g in groups:
+        pnl = sum(float(led[i]["net_pnl_usdt"]) for i in g)
+        marg = sum(float(led[i]["margin_usdt"] or 30) for i in g)
+        merged.append(pnl / marg * 100 if marg else 0.0)
+    rest = [pct_of_margin(r, "net_pnl_usdt") for k, r in enumerate(led) if k not in skip]
+    return rest + merged, len(groups)
 
 
 def pct_of_margin(r, pnl_field):
@@ -243,11 +304,29 @@ def main():
         base_v = sum(float(r.get(field) or 0) for r in base_rows) / len(base_rows)
         cur_v = sum(float(r.get(field) or 0) for r in rows_) / len(rows_)
         base = Metric(base_v, "USDT", label, f"{GATE2_BASELINE_N}건")
-        cur = Metric(cur_v, "USDT", label, f"{GATE2_BASELINE_N}건")   # 비교 축을 같게
-        g2[label] = cur >= base
-        print(f"  {label:<4} {base.value:+.3f} → {cur.value:+.3f} USDT/건"
-              f"  → {'충족' if g2[label] else '미충족'}")
+        cur = Metric(cur_v, "USDT", label, f"{len(rows_)}건")   # ★ 진짜 표본 수를 붙인다
+        g2[label] = cur.improved_over(base)
+        print(f"  {label:<4} {base} → {cur}  → {'충족' if g2[label] else '미충족'}")
+        # 누적 평균은 기준선(첫 39건)이 현재값에도 포함돼 개선이 희석된다.
+        # 40건 이후만 따로 본 값(marginal)을 병기해 실제 추세를 드러낸다.
+        if len(rows_) > GATE2_BASELINE_N:
+            tail = rows_[GATE2_BASELINE_N:]
+            tv = sum(float(r.get(field) or 0) for r in tail) / len(tail)
+            print(f"       (참고: {GATE2_BASELINE_N+1}건 이후 {len(tail)}건만 보면 {tv:+.3f} USDT/건)")
     print(f"  참고: 문서 기재 기준값 {GATE2_BASELINE_USDT:+.3f} (CSV 잣대)")
+    # 51건 도달 전에는 "앞으로 얼마나 나빠져도 견디는지"를 같이 보여준다.
+    # 기준2가 실질적으로 유일한 판정력을 가진 기준이라(기준1 자동충족, 기준3 해석
+    # 양분, 기준4 n=8이라 1건에 12.5%p 흔들림) 이 여유분이 곧 관문 결과다.
+    if n_csv < TARGET_N:
+        left = TARGET_N - n_csv
+        tot = sum(float(r.get("pnl_usdt") or 0) for r in csv_rows)
+        need = GATE2_BASELINE_USDT * TARGET_N - tot
+        print(f"  남은 {left}건 합계가 {need:+.2f} USDT 이상이면 기준2 통과")
+        stop_1 = -FUT_MARGIN * LEV * (STOP_PCT / 100)
+        max_stops = sum(1 for k in range(left + 1)
+                        if k * stop_1 + (left - k) * AVG_WIN >= need) - 1
+        print(f"    (손절 1건 ≈ {stop_1:+.1f} / 평균익절 ≈ {AVG_WIN:+.1f} 가정 시 "
+              f"손절 {max_stops}건까지 견딤, {max_stops+1}건부터 미충족)")
     print(f"  ⚠ 원문 설계 약점 — 건당 증거금이 50→20→25→30으로 변해와 절대액 비교임"
           f"(사이즈 커지면 통과 쉬워짐). 기준은 바꾸지 않고 명기만 함.")
 
@@ -321,37 +400,35 @@ def main():
 
     # ---- 원장 건별 오염 경고 ------------------------------------------------
     if led_rows:
-        pairs = find_contaminated(led_rows)
-        if pairs:
-            print(f"\n{'─'*68}\n⚠ 원장 건별 값 오염 {len(pairs)}쌍 감지")
+        groups = find_contaminated(led_rows)
+        if groups:
+            n_tr = sum(len(g) for g in groups)
+            print(f"\n{'─'*68}\n⚠ 원장 건별 값 오염 — {len(groups)}묶음 / {n_tr}건 감지")
             print("  같은 코인을 12시간 내 재거래하면 ledger_reconcile의 시간창 매칭이")
             print("  앞 거래에 뒷 거래 손익까지 귀속시킵니다. 총합은 맞지만 건별은 틀립니다.")
+            for g in groups:
+                if len(g) > 2:
+                    print(f"    연쇄 {len(g)}건: {led_rows[g[0]]['symbol']} "
+                          f"({', '.join(led_rows[i]['exit_time'][5:16] for i in g)})")
             zeros = [r for r in led_rows if abs(float(r["net_pnl_usdt"])) < 1e-9]
             print(f"  net=0.000으로 찍힌 {len(zeros)}건은 '손익 0'이 아니라 매칭 실패입니다"
                   f" → 승률 계산에서 패배로 세어져 원장 승률이 과소평가됩니다.")
-            # 쌍 합침 보정
-            skip = {i for p in pairs for i in p}
-            merged = [(float(led_rows[i]["net_pnl_usdt"]) + float(led_rows[j]["net_pnl_usdt"]))
-                      / (float(led_rows[i]["margin_usdt"]) + float(led_rows[j]["margin_usdt"])) * 100
-                      for i, j in pairs]
-            rest = [pct_of_margin(r, "net_pnl_usdt") for k, r in enumerate(led_rows) if k not in skip]
-            fixed = [x for x in rest + merged if x > OUTLIER_PCT]
+            merged_all, _ = merge_groups(led_rows, groups)
+            fixed = [x for x in merged_all if x > OUTLIER_PCT]
             raw = [pct_of_margin(r, "net_pnl_usdt") for r in led_rows
                    if pct_of_margin(r, "net_pnl_usdt") > OUTLIER_PCT]
             print(f"  보정 전 EV {sum(raw)/len(raw):+.2f}% (n={len(raw)}) → "
-                  f"쌍 합침 후 {sum(fixed)/len(fixed):+.2f}% (n={len(fixed)})")
+                  f"묶음 합침 후 {sum(fixed)/len(fixed):+.2f}% (n={len(fixed)})")
+            print("  ※ 두 값은 표본 구성이 다릅니다 — 오염으로 이상치처럼 보이던 거래가")
+            print("     합치면 정상 범위로 돌아와 편입되기도 합니다(순수 합침 효과 아님).")
             print("  → orderId 기반 매칭으로 교체 전까지 건별 원장값을 근거로 쓰지 마십시오.")
 
     # ---- 9/19 존속 판정 지표 ------------------------------------------------
     if led_rows:
         print(f"\n{'─'*68}\n[9/19 존속 판정 지표] — 원장 잣대, 버그조정 표본")
-        pairs = find_contaminated(led_rows)
-        skip = {i for p in pairs for i in p}
-        merged = [(float(led_rows[i]["net_pnl_usdt"]) + float(led_rows[j]["net_pnl_usdt"]))
-                  / (float(led_rows[i]["margin_usdt"]) + float(led_rows[j]["margin_usdt"])) * 100
-                  for i, j in pairs]
-        rest = [pct_of_margin(r, "net_pnl_usdt") for k, r in enumerate(led_rows) if k not in skip]
-        s = [x for x in rest + merged if x > OUTLIER_PCT]
+        groups = find_contaminated(led_rows)
+        merged_all, _ = merge_groups(led_rows, groups)
+        s = [x for x in merged_all if x > OUTLIER_PCT]
         ev = sum(s) / len(s)
         lo, hi = bootstrap_ci(s)
         print(f"  건당 EV {ev:+.2f}% (증거금 대비, 단순평균), n={len(s)}")

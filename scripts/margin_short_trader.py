@@ -312,17 +312,54 @@ PRESCREEN_24H = 5.0         # 1차 스크리닝: 24h가 이 미만이면 klines 
                             # 있음 — 별도 검증 없이는 포함/배제 어느 쪽도 확정 못 함, 향후 과제).
 
 
+TRADE_FIELDS = ["entry_time","exit_time","symbol","pump_2h","vol_mult",
+                "entry_price","exit_price","margin_usdt","pnl_pct","pnl_usdt","live","reason",
+                "btc_entry","btc_exit","mfe_pct","mae_pct","listing_age_days","qvol_24h"]
+
+
 def log_trade(row):
-    # ★ 2026-08-16(사용자 요청): "이 종목이 확실한가"는 표본이 안 쌓이지만(종목당 1~4회뿐),
-    # "이런 특징의 코인이 잘 되는가"(신규상장 경과일·유동성 카테고리)는 여러 종목을 묶어서
-    # 볼 수 있어 100~200건대에서 답이 나올 가능성이 큼 — 지금부터 메타데이터 축적.
-    new = not TRADES_PATH.exists()
-    with open(TRADES_PATH, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["entry_time","exit_time","symbol","pump_2h","vol_mult",
-                                           "entry_price","exit_price","margin_usdt","pnl_pct","pnl_usdt","live","reason",
-                                           "btc_entry","btc_exit","mfe_pct","mae_pct","listing_age_days","qvol_24h"])
-        if new: w.writeheader()
-        w.writerow(row)
+    """★ 2026-08-16(사용자 요청): "이 종목이 확실한가"는 표본이 안 쌓이지만(종목당 1~4회뿐),
+    "이런 특징의 코인이 잘 되는가"(신규상장 경과일·유동성 카테고리)는 여러 종목을 묶어서
+    볼 수 있어 100~200건대에서 답이 나올 가능성이 큼 — 지금부터 메타데이터 축적.
+
+    ★ 2026-08-20(기록감사 발견, 실거래 위험 수정): 이 함수에 예외처리가 없어서
+    기록 실패가 호출부까지 전파됐음. 호출부(청산 처리)는 log_trade 20줄 뒤에
+    del positions[sym]가 있어서, 여기서 예외가 나면 **거래소는 이미 청산됐는데
+    봇은 계속 보유 중이라고 믿는** 상태가 됨(다음 사이클마다 already_closed 재시도).
+    발생 조건이 특이하지 않음 — 사용자가 이 CSV를 엑셀로 열어두기만 해도
+    PermissionError로 재현됨. 같은 파일의 log_shadow()에는 이미 예외처리가 있었는데
+    정작 실거래 기록 쪽에만 없었음.
+
+    기록은 잃더라도 포지션 상태는 지켜야 하므로 절대 예외를 올리지 않는다. 대신
+    실패분을 별도 파일(_failed)에 덤프하고 텔레그램으로 알린다 — 조용히 사라지면
+    원장대조에서 "봇 기록에 없는 거래"로만 나타나 원인 추적이 어렵기 때문."""
+    try:
+        # 헤더 필드수가 현재 스키마와 다르면(과거 필드 추가 시 헤더 미갱신) 컬럼이 밀림.
+        # 2026-08-16 알트롱에서 실제 발생한 사고 — 여기서 먼저 감지해 경고만 남긴다.
+        if TRADES_PATH.exists():
+            with open(TRADES_PATH, encoding="utf-8") as f:
+                head = f.readline().strip()
+            if head and len(head.split(",")) != len(TRADE_FIELDS):
+                log.error(f"★CSV 헤더 불일치: 파일 {len(head.split(','))}필드 vs "
+                          f"코드 {len(TRADE_FIELDS)}필드 — 컬럼 밀림 상태로 기록 중")
+        new = not TRADES_PATH.exists()
+        with open(TRADES_PATH, "a", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=TRADE_FIELDS)
+            if new:
+                w.writeheader()
+            w.writerow(row)
+    except Exception as e:
+        log.error(f"★거래기록 실패({type(e).__name__}: {e}) — 포지션 정리는 계속 진행. "
+                  f"실패분을 {TRADES_PATH.name}.failed 에 덤프")
+        try:
+            with open(str(TRADES_PATH) + ".failed", "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            log.error(f"★덤프도 실패 — 유실된 거래: {row}")
+        try:
+            notify.send(f"🚨 거래기록 실패 {row.get('symbol')} — CSV가 열려있는지 확인 필요")
+        except Exception:
+            pass
 
 
 def log_shadow(sym, pump_pct, price, blocked_by, open_exposure, cap):

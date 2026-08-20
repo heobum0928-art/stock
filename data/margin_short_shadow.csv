@@ -1,0 +1,2 @@
+signal_time,symbol,pump_pct,signal_price,blocked_by,open_exposure,cap
+2026-08-16T06:33:41.628974+09:00,REDUSDT,31.1,0.1151,engine_cap,150.0,150

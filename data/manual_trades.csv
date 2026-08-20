@@ -1,0 +1,2 @@
+entry_time,exit_time,coin,entry_price,exit_price,sl_pct,trail_pct,arm_pct,measured_vol_pct,krw,pnl_pct,pnl_krw,reason,live
+2026-07-09T11:28:55.625877+09:00,2026-07-09T12:06:05.153620+09:00,TAIKO,208.0,215.0,6.84,5.47,6.84,2.74,100000,3.37,3365.0,트레일(고점+10.1%→+3.4%),False

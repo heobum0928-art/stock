@@ -119,48 +119,63 @@ BOTS = {
     # "claude_intelligence":   ROOT / "scripts" / "claude_intelligence.py",  # CI Mode
     # "swing_monitor" 제거 (2026-06-30): 스윙 전략 없음, 불필요
     # "vb_trader" 제거 (2026-06-25): forward t=-4.29, 승률17% — 폐기 확정
-    "retest_trader":         ROOT / "scripts" / "retest_trader.py",    # 돌파-재테스트 전략 B (모의 검증 중)
-    "em_trader":             ROOT / "scripts" / "em_trader.py",        # #24 초기모멘텀 (약세장 전용·모의, forward 게이트 검증)
-    "igniter_alert":         ROOT / "scripts" / "igniter_alert.py",    # #31 ML 점화 알림 (알림전용·주문없음, forward 추적)
-    "ml_trader":             ROOT / "scripts" / "ml_trader.py",        # #31 ML 점화 모의매매 (게이트 검증)
-    "core_trader":           ROOT / "scripts" / "core_trader.py",      # 코어 BTC 사이클타이밍 (검증엔진·모의 추적)
-    "core_leveraged":        ROOT / "scripts" / "core_leveraged.py",   # 코어+2배 레버리지 (바이낸스 선물 모의추적, 2026-07-09)
+    # "retest_trader" 제거 (2026-08-20, 기록감사 26봇 전수조사): 60일간 신규거래 0건(강세장
+    # 조건 미충족 상태 지속), 그나마 쌓인 78건도 건당+0.06%(t≈0, 무작위와 구분 불가). 이 속도로는
+    # 판정 자체가 영원히 안 남.
+    # "retest_trader":         ROOT / "scripts" / "retest_trader.py",
+    # "em_trader" 폐기 (2026-08-20): 411건 건당-0.53%/t=-2.31 — 무작위 대조군(-0.15%)보다
+    # 나쁘고 자기 게이트(t≥3.0)에 정반대로 실패. volaccum과 같은 부류의 통계적 확정손실.
+    # "em_trader":              ROOT / "scripts" / "em_trader.py",
+    # "igniter_alert" 제거 (2026-08-20): 알림전용 봇인데 notify.py 화이트리스트에 안 걸려
+    # 알림이 100% 차단 중이었음(존재이유 상실). 산출 CSV 2종도 읽는 코드 0곳. docstring이
+    # 약속한 "ML 학습에 사용"할 코드도 없음 — 3가지 존재이유가 전부 사망 상태.
+    # "igniter_alert":          ROOT / "scripts" / "igniter_alert.py",
+    # "ml_trader" 폐기 (2026-08-20): 423건 건당+0.02%/t=+0.07 — 60일·423건을 쌓고도
+    # 완전한 무(無). em_trader와 같은 igniter_model.pkl을 공유하는 계열, 함께 정리.
+    # "ml_trader":              ROOT / "scripts" / "ml_trader.py",
+    "core_trader":           ROOT / "scripts" / "core_trader.py",      # 코어 BTC 사이클타이밍 (검증엔진·모의 추적, core_leveraged 벤치마크로 존치 — 판단보류, 2026-08-20)
+    "core_leveraged":        ROOT / "scripts" / "core_leveraged.py",   # 코어+2배 레버리지 — ★실거래(armed), 2026-08-20 확인
     # "blowoff_short_paper" 은퇴 (2026-07-12): ①선물(fapi) 가격만 조회해 선물 미상장 코인(PYR 등)을
     # 추적 못 하는 버그 — PYR 모의숏이 실제 -28% 하락(숏 +17%)인데 "가격 무변동, -0.2%"로 오기록됨.
     # ②역할 종료: 검증된 실전봇(margin_short_trader, 현물API 사용·정상)이 대체.
     # "blowoff_short_paper":   ROOT / "scripts" / "blowoff_short_paper.py",
     "margin_short_trader":   ROOT / "scripts" / "margin_short_trader.py",  # ★거래량폭발 급등주 마진숏 실전 (검증완료, 증거금상한100·2배, 2026-07-11)
-    "margin_manual_long_trader": ROOT / "scripts" / "margin_manual_long_trader.py",  # ★재량롱(ETH/LTC) 실전 —
-        # 2026-08-08: watchdog 미등록으로 8/7부터 5일간 프로세스 없이 방치됐던 것 발견·등록
-        # (서버측 스탑은 걸려있어 자금 위험은 없었으나 트레일링/청산판단 로직이 안 돌고 있었음)
-        # ★ 2026-08-15(버그헌터 발견): 이 파일엔 __main__ 블록이 없어 watchdog이 실행해도
-        # import만 하고 즉시 종료(exit 0) — 08-08에 "watchdog 등록으로 청산로직 복구"라고
-        # 판단한 진단 자체가 틀렸음. 실제 트레일링/손절 감시는 tg_bot.py의 15초 폴링 루프
-        # (MANUAL_CHECK_INTERVAL_SEC)가 margin_manual_long_trader.check_positions()를 직접
-        # 호출하는 완전히 별개 경로로 동작 중(정상 작동 확인됨). 즉 지금 열린 포지션(LTC)이
-        # 방치된 건 아니지만, 이 watchdog 등록 자체는 30~60초마다 프로세스를 껐다 켜는 것 외엔
-        # 아무 보호도 안 함(placebo) — 진짜 안전망은 tg_bot 프로세스가 살아있는지 여부.
-    "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",  # RSI>92+거래량3배 숏 (MARGINAL, forward 모의검증, 2026-07-12)
-    "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15)
-    "bc_rule_shadow_paper": ROOT / "scripts" / "bc_rule_shadow_paper.py",  # b/c룰(손실축소) 모의 병렬검증 — 실전 진입 미러링, 순수모의, 2026-08-16
-    "alt_momentum_long_paper": ROOT / "scripts" / "alt_momentum_long_paper.py",  # 알트 모멘텀 Top3 롱 모의(hybrid_trader 알트선별 로직, BTC강세게이트 없이 상시가동, 100건 목표, 순수모의, 2026-08-17)
-    "shadow_fleet": ROOT / "scripts" / "shadow_fleet.py",  # 그림자 함대 — 같은 신호에 청산/필터 변형 6개를 병렬 적용해 짝비교(순수모의, 선물전종목+펀딩비·수수료 반영, 2026-08-19)
-    "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",    # 하이브리드 약세현금/강세 BTC50%+알트Top3 (강세 forward 검증·모의)
-    "crossex_logger":        ROOT / "scripts" / "crossex_logger.py",   # 교차거래소 선행신호 로거 (순수로깅·매매0, 격리)
-    "volume_radar":          ROOT / "scripts" / "volume_radar.py",     # 거래대금 급증 레이더 (순수로깅·매매0, 격리)
-    "accum_trader":          ROOT / "scripts" / "accum_trader.py",     # 매집 단타 (live_guard 제어, 약세장 역추세 실전)
+    # "margin_manual_long_trader" 제거 (2026-08-20, 기록감사 재확인): 08-15에 이미 발견된 대로
+    # __main__ 블록이 없어 watchdog이 등록해도 프로세스가 실제로 뜬 적이 없음(실측 확인 —
+    # 커맨드라인에 이 파일이 걸린 프로세스 0개). 30~60초마다 "재기동"만 반복하는 완전한 placebo.
+    # 진짜 트레일링/손절 감시는 tg_bot.py의 15초 폴링 루프가 이 파일을 직접 import해서 수행 중
+    # (정상 작동, 08-15 확인) — 그래서 **파일 자체는 삭제하지 않는다.** 여기 등록만 제거.
+    # "margin_manual_long_trader": ROOT / "scripts" / "margin_manual_long_trader.py",
+    # "rsi_extreme_short_paper" 제거 (2026-08-20): 58건 건당-0.02% — 무작위와 구분 불가.
+    # 손절 로직 자체가 없음(시간만기 청산뿐이라는 게 08-19 감사에서 지적돼 이미 disarm 상태).
+    # "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",
+    "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15) — 9/2 마감 대상
+    "bc_rule_shadow_paper": ROOT / "scripts" / "bc_rule_shadow_paper.py",  # b/c룰(손실축소) 모의 병렬검증 — 실전 진입 미러링, 순수모의, 2026-08-16 — 9/2 마감 대상
+    "alt_momentum_long_paper": ROOT / "scripts" / "alt_momentum_long_paper.py",  # 알트 모멘텀 Top3 롱 모의(hybrid_trader 알트선별 로직, BTC강세게이트 없이 상시가동, 100건 목표, 순수모의, 2026-08-17) — 9/2 마감 대상
+    "shadow_fleet": ROOT / "scripts" / "shadow_fleet.py",  # 그림자 함대 — 같은 신호에 청산/필터 변형 6개를 병렬 적용해 짝비교(순수모의, 선물전종목+펀딩비·수수료 반영, 2026-08-19) — 9/2 마감 대상
+    # "hybrid_trader" 제거 (2026-08-20): 가동 이래 실거래 0건(BEAR 게이트 상시성립 — SMA200
+    # 하회 지속). alt_momentum_long_paper가 이 봇의 알트선별 로직에서 BTC게이트만 뺀 상위호환이라
+    # 이미 완전 포섭됨(watchdog 주석에 그 관계가 명시돼 있었음).
+    # "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",
+    "crossex_logger":        ROOT / "scripts" / "crossex_logger.py",   # 교차거래소 선행신호 로거 (순수로깅·매매0, 격리) — 재구성 불가 데이터, 존치
+    "volume_radar":          ROOT / "scripts" / "volume_radar.py",     # 거래대금 급증 레이더 (순수로깅·매매0, 격리) — margin_short 9/19 판정에 필터후보로 연동, 판단보류
+    # "accum_trader" 폐기 (2026-08-20): 185건 건당-0.36%/t=-2.06 — 무작위보다 나쁨, 통계적으로
+    # 음수 확정(live_guard 미arm 상태로 전량 모의였음).
+    # "accum_trader":          ROOT / "scripts" / "accum_trader.py",
     # "newlisting_monitor" 은퇴 (2026-07-13): 6일간 실전체결 0건(유일 실전창 7/3에도 "90초내 체결가못잡음"으로
     # 놓침, 7/7 23시 전체disarm 후 재arm 안 됨), API타임아웃·DNS실패로 최대 7시간 다운 반복 — 신뢰성 문제.
     # 게다가 근본 전략도 이미 죽음(STRATEGY.md: 신규상장펌핑 5분만 늦어도 11/11 전패) — 재검토(2026-07-13)해도
     # 숏 반전도 안 됨(업비트/빗썸 원화프리미엄 현상이라 바이낸스엔 거의 안 옮음, n=3뿐).
     # "newlisting_monitor":    ROOT / "scripts" / "newlisting_monitor.py",
-    "rsi_trader":            ROOT / "scripts" / "rsi_trader.py",       # RSI 과매도반등 (검증된 첫 후보·모의 실측)
+    # "rsi_trader" 폐기 (2026-08-20): 77건 건당-0.76%/t=-2.12 — volaccum(이미 폐기)과 동급의
+    # 통계적 확정손실(live_guard 미arm, 전량 모의였음).
+    # "rsi_trader":            ROOT / "scripts" / "rsi_trader.py",
     # "cascade_trader" 은퇴 (2026-07-20): 07-08에 108조합 그리드서치+봉종가 백테스트착시 발견으로
     # "구제 불가" 확정된 뒤에도 모의로 계속 돌았음. 어디서도 이 데이터/로직을 안 씀(import·파일참조 0건),
     # 최근 실측도 -1.5~-2.2% 손절만 반복 확인 — 새 정보 없이 이미 죽은 판정만 재확인하는 상태.
     # newlisting_monitor(07-13)와 동일 사유로 완전 제거.
     # "cascade_trader":        ROOT / "scripts" / "cascade_trader.py",
-    "futures_logger":        ROOT / "scripts" / "futures_logger.py",   # 선물 펀딩/OI/롱숏 로거 (순수로깅·매매0, margin_short 오버레이 필터 후보용, 2026-07-13 유니버스 재정렬 후 재개)
+    "futures_logger":        ROOT / "scripts" / "futures_logger.py",   # 선물 펀딩/OI/롱숏 로거 (순수로깅·매매0, margin_short 오버레이 필터 후보용, 2026-07-13 유니버스 재정렬 후 재개) — 공식 히스토리API로 대체 가능한지 확인 필요(2026-08-20)
     # "lead_ws_trader" 폐기 (2026-07-02): 716건 비용후 -0.252%/t-4.07 통계적 확정손실 (#41)
     # "momentum_trader" 폐기 (2026-07-03): 90일 절제백테 전 구간(15분~168H) 전부 음수(t-17.5~-1.3),
     # 실측 15건도 -46.21%p 일치 확인. "오른 코인 추격"이 알트에서 전 타임프레임 역효과 (#42)
@@ -169,19 +184,32 @@ BOTS = {
     # 없는 한 재개 안 함.
     # "volaccum_trader":       ROOT / "scripts" / "volaccum_trader.py",  # 거래량매집 단타 (#43, 20~80배 스파이크 모의, TP+3% SL-3% 2H)
     # "spike_tracker" 제거 (2026-06-30): volume_radar와 역할 겹침, 불필요
-    "upbit_notice_monitor":  ROOT / "scripts" / "upbit_notice_monitor.py",   # 업비트 상장공지 감지지연 측정 (순수로깅·매매0)
-    "binance_notice_monitor": ROOT / "scripts" / "binance_notice_monitor.py", # 바이낸스 상장공지 감지지연 측정 (순수로깅·매매0)
-    "bithumb_notice_monitor": ROOT / "scripts" / "bithumb_notice_monitor.py", # 빗썸 공지 감지지연 측정 (순수로깅·매매0, 2026-07-16 watchdog 미등록으로 5일간 방치됐던 것 발견·등록)
-    "reaction_paper_trader": ROOT / "scripts" / "reaction_paper_trader.py",  # #45 상장공지 반응 모의매매 (순수모의·매매0, 손절-3%/트레일만/익절상한없음)
-    "orderflow_logger":      ROOT / "scripts" / "orderflow_logger.py",       # 체결방향 불균형(OFI) 로거 (순수로깅·매매0, 백테스트용 데이터 축적)
+    "upbit_notice_monitor":  ROOT / "scripts" / "upbit_notice_monitor.py",   # 업비트 상장공지 감지지연 측정 (순수로깅·매매0) — reaction_paper_trader가 소비
+    "binance_notice_monitor": ROOT / "scripts" / "binance_notice_monitor.py", # 바이낸스 상장공지 감지지연 측정 (순수로깅·매매0) — reaction_paper_trader가 소비
+    # "bithumb_notice_monitor" 제거 (2026-08-20): 산출물(bithumb_notice_events.csv)을 읽는
+    # 코드가 프로젝트 어디에도 없음(reaction_paper_trader는 업비트·바이낸스만 읽음) — 수집만
+    # 하고 아무도 안 보는 상태였음.
+    # "bithumb_notice_monitor": ROOT / "scripts" / "bithumb_notice_monitor.py",
+    # "reaction_paper_trader" 제거 (2026-08-20): 최근 13일간 신규거래 0건(상장공지 자체가
+    # 희소), 쌓인 8건도 건당-2.23%. 이 속도로는 판정표본(30건)까지 4개월 걸림 — 신호원(상장공지
+    # 모니터 2종)은 남기되 이 소비자만 정리.
+    # "reaction_paper_trader": ROOT / "scripts" / "reaction_paper_trader.py",
+    "orderflow_logger":      ROOT / "scripts" / "orderflow_logger.py",       # 체결방향 불균형(OFI) 로거 (순수로깅·매매0, 백테스트용 데이터 축적) — 재구성 불가 데이터, 존치. 단 whale_print 부산물(소비자 은퇴함)은 후속 정리 검토
     # "quiet_accum_screener" 임시 제거 (2026-07-09): exit=1 크래시루프 발견,
     # 35초마다 재시작되며 텔레그램 재시작 알림 스팸 — 원인 진단 후 복구.
     # "quiet_accum_screener":  ROOT / "scripts" / "quiet_accum_screener.py",   # #47 조용한 매집 스크리너 (거래대금상위+안오름+OFI매수우위 겹침, 순수로깅·매매0)
-    "breadth_monitor":       ROOT / "scripts" / "breadth_monitor.py",       # 시장전체 로테이션(breadth) 배경모니터 (순수로깅·매매0, 매수신호 아님)
+    "breadth_monitor":       ROOT / "scripts" / "breadth_monitor.py",       # 시장전체 로테이션(breadth) 배경모니터 (순수로깅·매매0) — 2026-08-20 상관리스크 분석에 실사용된 전례로 존치가치 확인
     # "whale_print_paper_trader" 은퇴 (2026-07-21): forward 1,733건 재판정 결과 day-clustered t-4.57,
     # 비용후 평균-0.85% — 통계적 확정손실. 원 가설(BLUR n=1) 반증됨. STRATEGY.md 참조.
-    # "whale_print_paper_trader": ROOT / "scripts" / "whale_print_paper_trader.py",  # #49 고래발자국(바닥권) 반응 모의매매 (순수모의·매매0)
+    # "whale_print_paper_trader": ROOT / "scripts" / "whale_print_paper_trader.py",
 }
+
+# ★ 2026-08-20 기록감사(26봇 전수조사, 근거는 docs/would_change_log.md 참조) — 위에서
+# 11개 제거. 무작위 대조군(random_trades.csv, 46건 건당-0.15%)보다 표본이 충분한데도
+# 나쁘거나(em/ml/accum/rsi_trader/rsi_extreme_short_paper), 표본이 몇 달째 안 쌓이거나
+# (retest_trader/hybrid_trader/reaction_paper_trader), 존재이유가 이미 죽은(igniter_alert/
+# bithumb_notice_monitor) 봇들. margin_manual_long_trader는 성적과 무관하게 08-15부터
+# 알려진 placebo 등록이라 제거(파일은 tg_bot이 계속 씀, 삭제 안 함).
 
 
 def send_tg(text: str) -> None:

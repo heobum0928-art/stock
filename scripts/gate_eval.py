@@ -52,7 +52,6 @@ GATE1_MIN_LOWER = 45.0                    # 기준1 Wilson 하한 최소치(%)
 GATE4_MAX_GAP_PP = 10.0                   # 기준4 승률 허용 하락폭(%p)
 GATE4_CUTOFF = datetime(2026, 8, 16, 23, 0, tzinfo=KST)   # 원문 "확인 방법" 열 기준
 GATE4_CUTOFF_REAL = datetime(2026, 8, 15, 23, 21, tzinfo=KST)  # 실제 캡전환(병기용)
-INFRA_FIX_DATE = datetime(2026, 8, 7, tzinfo=KST)         # 인프라버그 수정일
 TARGET_N = 51
 
 
@@ -210,8 +209,7 @@ def main():
     print(f"  원본     {len(csv_all)}건")
     print(f"  버그조정 {len(csv_adj)}건 (이상치 = 증거금 대비 {OUTLIER_PCT:.0f}% 초과 손실)")
     for s, v, t_ in outliers:
-        after = " ← 인프라수정 이후!" if datetime.fromisoformat(t_).astimezone(KST) >= INFRA_FIX_DATE else ""
-        print(f"    제외: {s:<12}{v:>+8.1f}%  {t_}{after}")
+        print(f"    제외: {s:<12}{v:>+8.1f}%  {t_}")
 
     # ---- 기준1: 킬스위치 ---------------------------------------------------
     print(f"\n{'─'*68}\n[기준1] 킬스위치 — Wilson 95% CI 하한 ≥ {GATE1_MIN_LOWER}%")

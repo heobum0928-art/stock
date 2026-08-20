@@ -1,6 +1,6 @@
 """[알림] 보유 포지션 현황을 텔레그램으로 전송 — show_positions.py와 동일 포맷.
 1시간마다 작업 스케줄러(CoinbaseTelegramStatus)로 실행."""
-import sys, json, time
+import sys, csv, json, time
 from pathlib import Path
 
 import requests
@@ -13,11 +13,31 @@ except Exception:
     pass
 
 from bithumb import notify
+from bithumb.binance_guard import _signed
 
 
 def price(sym):
     r = requests.get("https://api.binance.com/api/v3/ticker/price", params={"symbol": sym}, timeout=5)
     return float(r.json()["price"])
+
+
+def _futures_price(sym):
+    r = requests.get("https://fapi.binance.com/fapi/v1/ticker/price", params={"symbol": sym}, timeout=5)
+    return float(r.json()["price"])
+
+
+def _fees(sym, entry_ts):
+    """진입 이후 누적 펀딩비+수수료(거래소 원장 실제값). 실패해도 표시만 저해되고
+    봇 동작엔 영향 없음 — (0,0)으로 대체."""
+    try:
+        r = _signed("GET", "/fapi/v1/income",
+                    {"symbol": sym, "startTime": int(entry_ts * 1000) - 60_000, "limit": 1000})
+        rows = r.json()
+        funding = sum(float(x["income"]) for x in rows if x["incomeType"] == "FUNDING_FEE")
+        comm = sum(float(x["income"]) for x in rows if x["incomeType"] == "COMMISSION")
+        return funding, comm
+    except Exception:
+        return 0.0, 0.0
 
 
 def _remain_h(exit_ts):
@@ -26,6 +46,68 @@ def _remain_h(exit_ts):
         return "-"
     h = (exit_ts - time.time()) / 3600
     return f"{h:.1f}h" if h >= 0 else "만기지남"
+
+
+SHADOW_TARGET_N = 20  # DEADLINES.md 9/2 판정 최소표본 기준(변형당) — 남은건수 계산용
+
+
+def _shadow_summary():
+    """그림자 함대(shadow_fleet) 진행상황 — 2026-08-19 추가, 같은날 종목중심으로 개편.
+    오픈 포지션은 실거래 포지션현황과 같은 포맷(종목/수익률/경과)으로 보여주고,
+    변형마다 다르게 보유한 경우만 "제외" 줄에 표시. 순수모의라 가격 기준 미실현
+    수익률만 보여줌(펀딩비 미반영) — 정밀 판정은 DEADLINES.md 마감일에 따로 함."""
+    pos_path = ROOT / "data" / "shadow_fleet_pos.json"
+    if not pos_path.exists():
+        return None
+    try:
+        pos = json.loads(pos_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    sig_path = ROOT / "data" / "shadow_signals.csv"
+    n_sig = 0
+    if sig_path.exists():
+        with open(sig_path, encoding="utf-8") as f:
+            n_sig = max(sum(1 for _ in f) - 1, 0)  # 헤더 제외
+
+    trades_path = ROOT / "data" / "shadow_trades.csv"
+    n_trade = {}
+    if trades_path.exists():
+        with open(trades_path, encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                n_trade[r["variant"]] = n_trade.get(r["variant"], 0) + 1
+
+    all_variants = list(pos.keys())
+    by_sym = {}
+    for v, holdings in pos.items():
+        for sym, p in holdings.items():
+            d = by_sym.setdefault(sym, {"entry": p["entry_price"], "ts": p["entry_ts"], "variants": []})
+            d["variants"].append(v)
+
+    lines = ["", f"[그림자함대] 신호누적 {n_sig}건 (전종목 숏)"]
+    if by_sym:
+        lines.append("<pre>")
+        lines.append(f"{'종목':<8}{'수익률':>8}{'경과':>7}")
+        for sym, d in sorted(by_sym.items()):
+            try:
+                cur = _futures_price(sym)
+                pnl_s = f"{(1 - cur / d['entry']) * 100:>+7.2f}%"
+            except Exception:
+                pnl_s = "      -"
+            elapsed_h = (time.time() - d["ts"]) / 3600
+            lines.append(f"{sym[:-4]:<8}{pnl_s}{elapsed_h:>6.1f}h")
+            excluded = [v.split("_")[0] for v in all_variants if v not in d["variants"]]
+            if excluded:
+                lines.append(f" ㄴ제외:{','.join(excluded)}")
+        lines.append("</pre>")
+    else:
+        lines.append("오픈 포지션 없음")
+
+    prog = " ".join(
+        f"{v.split('_')[0]} {n_trade.get(v, 0)}/{SHADOW_TARGET_N}(잔여{max(SHADOW_TARGET_N - n_trade.get(v, 0), 0)})"
+        for v in all_variants)
+    lines.append(f"청산누적(9/2목표): {prog}")
+    return "\n".join(lines)
 
 
 def build_text():
@@ -37,7 +119,9 @@ def build_text():
             cur = price(sym)
             pnl_pct = (1 - cur / p["entry_price"]) * 100
             pnl_usdt = p["margin"] * 2 * (pnl_pct / 100)
-            rows.append((p["coin"], "숏", pnl_pct, pnl_usdt, _remain_h(p.get("exit_ts"))))
+            funding, comm = _fees(sym, p["entry_ts"])
+            net_usdt = pnl_usdt + funding + comm
+            rows.append((p["coin"], "숏", pnl_pct, net_usdt, _remain_h(p.get("exit_ts"))))
 
     ml = ROOT / "data" / "margin_manual_long_pos.json"
     if ml.exists():
@@ -47,8 +131,11 @@ def build_text():
             pnl_usdt = p["qty"] * (cur - p["entry_price"])
             rows.append((coin, "롱", pnl_pct, pnl_usdt, _remain_h(p.get("exit_ts"))))
 
+    shadow = _shadow_summary()
+
     if not rows:
-        return "[포지션현황] 보유 포지션 없음"
+        text = "[포지션현황] 보유 포지션 없음"
+        return text + (shadow or "")
 
     lines = ["[포지션현황]", "<pre>"]
     lines.append(f"{'종목':<7}{'방향':<4}{'수익률':>8}{'순익':>9}  {'만기'}")
@@ -58,7 +145,7 @@ def build_text():
         total += usdt
     lines.append(f"{'합계':<15}{total:>+9.2f}")
     lines.append("</pre>")
-    return "\n".join(lines)
+    return "\n".join(lines) + (shadow or "")
 
 
 def main():

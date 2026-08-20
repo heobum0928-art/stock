@@ -89,6 +89,9 @@ for _b in _PURE_PAPER_LOGGING_BOTS:
 # alt_momentum_long_paper: 자체 CHECK_SEC=21600(hybrid_trader와 동일 6시간 일봉기반) —
 # 문턱을 CHECK_SEC와 똑같이 두면 경계오탐(상단 2026-07-26 주석 참고) 나므로 2배로 여유.
 HANG_CHECK_OVERRIDE_SEC["alt_momentum_long_paper"] = 43200
+# shadow_fleet: POLL_SEC=180이지만 신호 없는 사이클은 티커조회 1회로 끝나 CPU를 거의 안 씀.
+# 다른 순수모의 로깅봇들과 동일하게 6시간.
+HANG_CHECK_OVERRIDE_SEC["shadow_fleet"] = 21600
 # tg_bot: 그 자체는 매매 안 하지만 margin_manual_long_trader의 실질적 안전망(15초 폴링으로
 # 트레일링/손절을 직접 처리)이라 6시간까지는 안 늘리고 core_trader/core_leveraged와 같은
 # 90분으로 절충 — 오탐 소음은 없애되 진짜 행 상태는 비교적 빨리 잡음.
@@ -141,6 +144,7 @@ BOTS = {
     "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15)
     "bc_rule_shadow_paper": ROOT / "scripts" / "bc_rule_shadow_paper.py",  # b/c룰(손실축소) 모의 병렬검증 — 실전 진입 미러링, 순수모의, 2026-08-16
     "alt_momentum_long_paper": ROOT / "scripts" / "alt_momentum_long_paper.py",  # 알트 모멘텀 Top3 롱 모의(hybrid_trader 알트선별 로직, BTC강세게이트 없이 상시가동, 100건 목표, 순수모의, 2026-08-17)
+    "shadow_fleet": ROOT / "scripts" / "shadow_fleet.py",  # 그림자 함대 — 같은 신호에 청산/필터 변형 6개를 병렬 적용해 짝비교(순수모의, 선물전종목+펀딩비·수수료 반영, 2026-08-19)
     "hybrid_trader":         ROOT / "scripts" / "hybrid_trader.py",    # 하이브리드 약세현금/강세 BTC50%+알트Top3 (강세 forward 검증·모의)
     "crossex_logger":        ROOT / "scripts" / "crossex_logger.py",   # 교차거래소 선행신호 로거 (순수로깅·매매0, 격리)
     "volume_radar":          ROOT / "scripts" / "volume_radar.py",     # 거래대금 급증 레이더 (순수로깅·매매0, 격리)

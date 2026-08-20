@@ -49,6 +49,13 @@ def send(text: str, force: bool = False) -> bool:
     if not _allowed(text):
         log.debug(f"[Telegram] 화이트리스트 미통과 — 전송 생략: {text[:50]}")
         return False
+    # ★ 2026-08-20(기록감사 발견) — 🚨(치명 경보) 메시지는 무음시간에도 항상 보낸다.
+    # 이전엔 호출부가 force=True를 넘겨야만 무음시간을 뚫었는데, 실제로 그렇게
+    # 부르는 곳이 프로젝트 전체에 1곳뿐이었다. "서버측 손절 검증 실패", "거래소엔
+    # 포지션 열려있는데 청산 실패" 같은 경보 6곳이 00~06시엔 전부 조용히 사라지고
+    # 있었음 — -442%/-106% 사고가 났던 바로 그 종류의 상황을 알릴 유일한 경로였다.
+    if "🚨" in text:
+        force = True
     if not force and _is_quiet_hours():
         log.debug("[Telegram] 무음 시간대 — 전송 생략")
         return False

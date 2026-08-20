@@ -160,8 +160,16 @@ def get_futures_usdt() -> float | None:
     return None
 
 
-def get_position() -> dict:
-    """BTCUSDT 현재 포지션. {amt(+롱/-숏), entry, notional, unrealized}. 실패 시 amt=0."""
+def get_position():
+    """BTCUSDT 현재 포지션. {amt(+롱/-숏), entry, notional, unrealized}. 실패 시 None.
+
+    ★ 2026-08-20(기록감사 발견, 실거래 위험 수정) — 이전엔 실패 시 amt=0.0인
+    딕셔너리를 반환해 "조회 실패"와 "진짜 무포지션"이 구분 안 됐다
+    (get_futures_position()은 이미 이 패턴으로 고쳐져 있었는데 이 함수만 남아있었음).
+    rebalance_long()이 이 값으로 delta=0을 계산하면 조회 실패를 "이미 목표 도달"로
+    오판하고, 호출부(core_leveraged.py)가 그 결과를 성공으로 저장하면 — 실제 포지션은
+    그대로인데 봇은 청산 완료라고 믿는 상태가 될 수 있었다. 이 경로엔 서버측 손절이
+    없어서 그 상태가 무기한 방치될 위험이 있었다."""
     try:
         r = _signed("GET", "/fapi/v2/positionRisk", {"symbol": SYMBOL})
         if r.status_code == 200:
@@ -173,13 +181,12 @@ def get_position() -> dict:
                 mark = float(p.get("markPrice", 0) or 0)
                 return {"amt": amt, "entry": entry, "mark": mark,
                         "notional": abs(amt) * mark, "unrealized": float(p.get("unRealizedProfit", 0) or 0)}
+            log.warning("포지션조회 실패: 200 응답인데 데이터 없음(예상밖 응답)")
         else:
-            # ★ 버그헌터 감사 발견(2026-08-18): 비200 응답이 무로그로 "진짜 0포지션"과
-            #   동일하게 취급됐음 — get_futures_position()은 이미 이 패턴으로 로깅함.
             log.warning(f"포지션조회 실패(status={r.status_code}): {r.text[:200]}")
     except Exception as e:
         log.warning(f"포지션조회 실패: {e}")
-    return {"amt": 0.0, "entry": 0.0, "mark": 0.0, "notional": 0.0, "unrealized": 0.0}
+    return None
 
 
 def _mark_price(sym: str = SYMBOL) -> float:
@@ -326,6 +333,11 @@ class BinanceGuard:
             return {"error": "price 조회 실패"}
 
         pos = get_position()
+        if pos is None:
+            # ★ 2026-08-20: 조회 실패를 delta=0(=이미 목표 도달)으로 잘못 계산하지
+            # 않도록 여기서 명확히 실패 처리한다. 호출부(live_rebalance)가 error를
+            # 보면 state 저장을 안 하고 다음 루프에서 자동 재시도한다.
+            return {"error": "포지션조회 실패"}
         cur_notional = pos["amt"] * price   # 롱이면 +, 숏이면 -(코어는 롱만)
         delta_notional = target_notional_usdt - cur_notional
         # 최소 변화 필터 (명목 5 USDT 미만 변화는 스킵 — 바이낸스 최소주문/수수료 낭비 방지)

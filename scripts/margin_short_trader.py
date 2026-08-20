@@ -690,6 +690,13 @@ def main():
                                           "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
                         if not res.get("stop_verified"):
                             log.error(f"🚨 {sym} 서버측 스탑주문 검증 실패 — 무보호 상태일 수 있음, 수동 확인 필요")
+                            # ★ 2026-08-20(기록감사 발견): 위 log.error는 로그파일에만 남고
+                            # 아래 텔레그램 메시지는 항상 📉라 화이트리스트를 통과 못 했음
+                            # (quiet_hours 여부와 무관하게 이 알림 자체가 24시간 도달 불가였음).
+                            # 서버측 손절 없이 열린 포지션이라 이걸 놓치면 봇 감시에만
+                            # 의존하게 되므로, 🚨로 별도 발송(quiet_hours 무시하고 항상 감).
+                            try: notify.send(f"🚨 {sym} 서버측 스탑 등록 실패 — 무보호 포지션, 수동 확인 필요")
+                            except Exception: pass
                         log.warning(f"★실전 선물숏 진입(마진대출폴백) {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개 (서버스탑={res.get('stop_order_id')})")
                         try: notify.send(f"📉 선물숏 진입(마진폴백) {sym} {LOOKBACK_H}h+{ret2h:.0f}% (증거금{margin:.0f}USDT, 서버스탑{'OK' if res.get('stop_verified') else '실패!'})")
                         except Exception: pass

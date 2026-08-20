@@ -233,8 +233,29 @@ def main():
                     # 성립해 자동 재시도됨 (성공할 때까지 계속 시도, 조용히 포기하지 않음)
                 else:
                     pos = get_position()
-                    log.info(f"[LIVE] 유지 {s['state']} | BTCUSDT {price:,.2f} | 실포지션 {pos['amt']:.4f}BTC "
-                             f"(명목 {pos['notional']:.1f}USDT, 미실현 {pos['unrealized']:+.2f})")
+                    if pos is None:
+                        # ★ 2026-08-20: 이전엔 pos['amt']를 바로 읽어 조회 실패 시
+                        # TypeError로 죽었고(또는 구버전에서는 amt=0으로 조용히
+                        # "무포지션"처럼 로깅됐음), 실포지션 감시가 그 사이 비었다.
+                        log.warning("[LIVE] 포지션조회 실패 — 다음 루프 재확인 (state는 유지)")
+                    else:
+                        log.info(f"[LIVE] 유지 {s['state']} | BTCUSDT {price:,.2f} | 실포지션 {pos['amt']:.4f}BTC "
+                                 f"(명목 {pos['notional']:.1f}USDT, 미실현 {pos['unrealized']:+.2f})")
+                        # ★ 2026-08-20(기록감사 발견): docstring이 약속한 "청산위험 70%
+                        # 경보"가 모의(mark_to_market) 경로에만 구현돼 있었고, 정작 실제
+                        # 돈이 걸린 실전 경로엔 없었다. 이 포지션은 서버측 손절도 없어서
+                        # 이게 유일한 조기경보다. margin_est는 진입 시 사이징 공식
+                        # (증거금×LEVERAGE=명목)의 역산 근사치.
+                        margin_est = pos["notional"] / LEVERAGE if LEVERAGE else 0
+                        if margin_est > 0:
+                            loss_frac = -pos["unrealized"] / margin_est
+                            if loss_frac >= LIQ_WARN_FRAC:
+                                msg = (f"🚨 [CORE-LEV] 청산위험 — 증거금 추정 대비 {loss_frac*100:.0f}% 손실 "
+                                       f"(진입 {pos['entry']:,.0f} → 현재 {price:,.0f}, "
+                                       f"미실현 {pos['unrealized']:+.1f}USDT) — 서버측 손절 없음, 수동 확인 필요")
+                                log.error(msg)
+                                try: notify.send(msg)
+                                except Exception: pass
             else:      # 모의
                 mark_to_market(s, price)
                 apply_funding(s, price)

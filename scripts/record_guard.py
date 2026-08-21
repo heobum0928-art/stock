@@ -107,32 +107,52 @@ def check_bots():
         if not fresh:
             add(1, f"[{bot}] 산출물 파일이 아예 없음")
             continue
-        if min(fresh) > STALE_BOT_HOURS:
-            add(1, f"[{bot}] {min(fresh):.0f}시간째 산출물 갱신 없음 — 죽었거나 헛도는 중")
+        # min이 아니라 max — 하나라도 낡았으면 그 경로가 죽은 것이다.
+        # (초판은 min이라 출력물 2개 중 하나만 살아있어도 통과했다)
+        if max(fresh) > STALE_BOT_HOURS:
+            add(1, f"[{bot}] {max(fresh):.0f}시간째 산출물 갱신 없음 — 죽었거나 헛도는 중")
 
 
 # ── 3. 아무도 안 읽는 데이터 ────────────────────────────────────────────────
+READ_CALL = re.compile(
+    r"(?:open|read_csv|read_text|read_json|load|DictReader)\s*\([^)]{0,200}", re.S)
+
+
 def check_orphan_data():
-    """쓰기는 되는데 읽는 코드가 없는 파일. breadth_events.csv가 한 달간
-    이 상태였고, 그래서 상관 리스크를 '판단 불가'로 잘못 결론냈었다."""
-    code = ""
+    """쓰기는 되는데 **읽는** 코드가 없는 파일. breadth_events.csv가 한 달간
+    이 상태였고, 그래서 상관 리스크를 '판단 불가'로 잘못 결론냈었다.
+
+    ★ 2026-08-20 코드리뷰 지적 반영 — 초판은 구조적으로 발화가 불가능했다:
+      ① 이 파일(record_guard.py) 자신이 코퍼스에 포함되는데 BOT_OUTPUTS에
+         파일명을 적어놔서, 등재된 파일은 자기참조만으로 임계값을 넘겨 영구 면역
+      ② '문자열이 코드에 2번 이상 등장'은 쓰는 쪽 언급까지 세므로,
+         생성자만 있고 소비자가 없는 파일이 정상으로 판정됨
+    → 자기 자신을 코퍼스에서 빼고, **읽기 호출 근처에 있는 언급만** 센다."""
+    corpus = []
     for s in glob.glob(str(ROOT / "scripts" / "*.py")) + glob.glob(str(ROOT / "bithumb" / "*.py")):
+        if os.path.basename(s) == os.path.basename(__file__):
+            continue                          # 자기참조 면역 차단
         try:
-            code += open(s, encoding="utf-8", errors="ignore").read()
+            corpus.append(open(s, encoding="utf-8", errors="ignore").read())
         except Exception:
             pass
-    orphans = []
-    for f in glob.glob(str(ROOT / "data" / "*.csv")):
+    read_ctx = "\n".join(m.group(0) for c in corpus for m in READ_CALL.finditer(c))
+
+    for f in sorted(glob.glob(str(ROOT / "data" / "*.csv")),
+                    key=os.path.getsize, reverse=True):
         base = os.path.basename(f)
-        if os.path.getsize(f) < 50_000:      # 작은 건 방치돼도 손해가 적음
+        mb = os.path.getsize(f) / 1024 / 1024
+        if mb < 0.05:
             continue
-        if age_h(f) > 24 * 14:               # 2주 넘게 안 갱신되면 이미 죽은 것 — 별건
+        if age_h(f) > 24 * 14:               # 2주 넘게 안 갱신 = 이미 죽은 것, 별건
             continue
-        # 파일명이 코드에 2번 이상 나오면 최소한 생성+참조는 되는 것으로 본다
-        if code.count(base) + code.count(base.rsplit(".", 1)[0]) < 2:
-            orphans.append((base, os.path.getsize(f) / 1024 / 1024))
-    for b, mb in orphans:
-        add(2, f"{b} ({mb:.0f}MB) 계속 쌓이는데 읽는 코드가 없음 — 쓸 데가 없으면 중단 검토")
+        stem = base.rsplit(".", 1)[0]
+        if base in read_ctx or stem in read_ctx:
+            continue
+        # 큰 파일일수록 시끄럽게 — 작고 계속 쌓이는 건 참고, 대용량은 주의
+        add(1 if mb >= 10 else 2,
+            f"{base} ({mb:.1f}MB) 쌓이는데 읽는 코드 없음 — "
+            f"쓸 질문이 없으면 중단, 있으면 그 질문을 적어둘 것")
 
 
 # ── 4. 마감일 ───────────────────────────────────────────────────────────────
@@ -176,18 +196,55 @@ def check_gate():
 
 # ── 7. 미커밋 방치 ──────────────────────────────────────────────────────────
 def check_uncommitted():
+    """★ 2026-08-20 코드리뷰 지적 반영 — 초판은 `--untracked-files=no`를 써서
+    **한 번도 커밋된 적 없는 파일을 통째로 제외**했다. 이 스크립트를 만든 이유가
+    "DEADLINES.md가 git 추적조차 안 된 채 유실 직전이었다"인데, 정확히 그 부류를
+    못 잡았다(초판 실행 시 자기 자신이 미추적인데 '위험 0'을 보고).
+
+    또 '가장 오래된 변경'을 파일 mtime으로 재면, breadth_events.csv처럼 계속
+    append되는 추적 파일은 mtime이 항상 '지금'이라 영원히 경보에 안 걸린다.
+    → git이 아는 마지막 커밋 시각을 기준으로 잰다."""
+    # (a) 한 번도 커밋 안 된 소스/문서 — 유실 시 복구 불가라 즉시 위험
+    _, out, _ = _git("ls-files", "--others", "--exclude-standard")
+    never = [f for f in out.splitlines()
+             if f.startswith(("scripts/", "docs/", "bithumb/")) and f.endswith((".py", ".md"))]
+    if never:
+        add(0, f"한 번도 커밋 안 된 파일 {len(never)}건 — 유실 시 복구 불가: "
+               f"{', '.join(never[:3])}{' 외' if len(never) > 3 else ''}")
+
+    # (b) 추적 중인데 커밋 안 된 변경 — 마지막 커밋 이후 며칠 지났는지로 잰다
     _, out, _ = _git("status", "--porcelain", "--untracked-files=no")
-    changed = [l[3:] for l in out.splitlines() if l.strip()]
+    changed = [l[3:].strip() for l in out.splitlines() if l.strip()]
     if not changed:
         return
-    oldest = 0
+    oldest = 0.0
     for f in changed:
-        p = ROOT / f
-        if p.exists():
-            oldest = max(oldest, age_h(p) / 24)
+        _, ts, _ = _git("log", "-1", "--format=%ct", "--", f)
+        if ts.strip().isdigit():
+            days = (NOW.timestamp() - int(ts.strip())) / 86400
+            oldest = max(oldest, days)
     sev = 0 if oldest > STALE_COMMIT_DAYS else 2
-    add(sev, f"미커밋 변경 {len(changed)}건 (가장 오래된 것 {oldest:.1f}일) — "
+    add(sev, f"미커밋 변경 {len(changed)}건 (마지막 커밋 후 최대 {oldest:.1f}일) — "
              f"{'백업 안 된 상태로 방치 중' if sev == 0 else '확인 요망'}")
+
+
+def check_lost_records():
+    """log_trade 실패 시 남는 .failed 덤프와, 봇 기록 대 원장 행수 불일치.
+    ★ 2026-08-20 코드리뷰 지적 — .failed를 읽는 코드가 프로젝트 어디에도 없어서
+    거래가 유실돼도 발생 순간의 텔레그램 1회 외엔 흔적이 없었다."""
+    for f in glob.glob(str(ROOT / "data" / "*.failed")):
+        n = sum(1 for _ in open(f, encoding="utf-8", errors="ignore"))
+        add(0, f"{os.path.basename(f)} — 기록 못 한 거래 {n}건 있음. "
+               f"수동으로 CSV에 복구해야 표본에서 안 빠짐")
+
+    t = ROOT / "data" / "margin_short_trades.csv"
+    l = ROOT / "data" / "margin_short_ledger.csv"
+    if t.exists() and l.exists():
+        nt = sum(1 for r in csv.DictReader(open(t, encoding="utf-8")) if r.get("exit_time"))
+        nl = sum(1 for _ in csv.DictReader(open(l, encoding="utf-8")))
+        if nt != nl:
+            add(1, f"봇 기록 {nt}건 vs 원장대조 {nl}건 불일치 — "
+                   f"원장 대조를 다시 돌리거나 유실 여부 확인")
 
 
 def main():
@@ -198,6 +255,7 @@ def main():
     check_reconcile()
     n = check_gate()
     check_uncommitted()
+    check_lost_records()
 
     issues.sort(key=lambda x: x[0])
     danger = [m for s, m in issues if s == 0]
@@ -220,9 +278,14 @@ def main():
         lines += [f"🚨 {m}" for m in danger] + [f"⚠️ {m}" for m in warn]
         try:
             from bithumb import notify
-            notify.send("\n".join(lines), force=True)
+            if not notify.send("\n".join(lines), force=True):
+                # 조용한 전송 실패가 이 스크립트를 무력화하는 가장 그럴듯한 경로다
+                # (venv 밖 인터프리터로 스케줄되면 requests 미설치로 전부 실패).
+                print("  ★ 텔레그램 전송이 False를 반환 — 보고가 안 나갔습니다")
+                sys.exit(2)
         except Exception as e:
-            print(f"  (텔레그램 전송 실패: {e})")
+            print(f"  ★ 텔레그램 전송 실패: {type(e).__name__}: {e}")
+            sys.exit(2)   # 스케줄러 결과코드에 남겨 조용한 실패를 막는다
 
 
 if __name__ == "__main__":

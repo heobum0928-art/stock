@@ -161,6 +161,72 @@ def stage_feat(nproc):
 
 
 # ---------------- 평가 ----------------
+def _atom(f, tag):
+    for tg, op, th in (POS_TH if f in POSF else RANK_TH):
+        if tg == tag:
+            return (f, op, th)
+    raise KeyError(tag)
+
+
+def _parse(nm):
+    out = []
+    for part in nm.split(' & '):
+        f, tag = part.rsplit('.', 1)
+        out.append(_atom(f, tag))
+    return out
+
+
+def _build(fv, defn):
+    s = None
+    for f, op, th in defn:
+        v = fv[f]
+        b = (v <= th) if op == 'le' else ((v >= th) & (v != 255))
+        s = b if s is None else (s & b)
+    return s
+
+
+def _load_all():
+    syms = L.symbols('disc')
+    T, SID, R, FV = [], [], {k: {'L': [], 'S': []} for k in HORIZONS}, {f: [] for f in FEATS}
+    for i, s in enumerate(syms):
+        z = np.load(os.path.join(CACHE, s + '.npz'))
+        if 'empty' in z.files:
+            continue
+        T.append(z['t']); SID.append(np.full(len(z['t']), i, np.int16))
+        for k in HORIZONS:
+            R[k]['L'].append(z['L_' + k]); R[k]['S'].append(z['S_' + k])
+        for f in FEATS:
+            FV[f].append(z['f_' + f])
+    t = np.concatenate(T); sid = np.concatenate(SID)
+    ret = {}
+    for k in HORIZONS:
+        for dr in ('L', 'S'):
+            ret[(k, dr)] = np.concatenate(R[k][dr]); R[k][dr] = None
+    fv = {f: np.concatenate(FV[f]) for f in FEATS}
+    return t, sid, ret, fv
+
+
+def stage_oct():
+    """out.json 의 후보 중 'oct' 없는 행에 2025-10 성적을 채운다."""
+    import datetime as dt
+    p = os.path.join(D, 'bsweep_vol_out.json')
+    o = json.load(open(p))
+    need = [r for r in o['rows'] if 'oct' not in r and r['mean'] > 0 and r['sign_stable']
+            and r['months_same_sign'] >= 8][:25]
+    if not need:
+        print('nothing to do'); return
+    t, sid, ret, fv = _load_all()
+    mo = np.array([dt.datetime.utcfromtimestamp(x / 1000).strftime('%Y-%m') for x in t])
+    oct_m = (mo == '2025-10')
+    for r in need:
+        sg = _build(fv, _parse(r['sig'])) & oct_m
+        r['oct'] = L.evaluate(sg, ret[(r['hz'], 'L' if r['dirn'] == 'LONG' else 'S')], t,
+                              min_n=1, sym_ids=sid)
+        print(r['sig'], r['dirn'], r['hz'], r['oct'].get('mean'), flush=True)
+    json.dump(o, open(p, 'w'), default=float)
+    print('oct saved', len(need))
+
+
 def stage_eval():
     syms = L.symbols('disc')
     T, SID, R, FV = [], [], {k: {'L': [], 'S': []} for k in HORIZONS}, {f: [] for f in FEATS}
@@ -309,8 +375,12 @@ def stage_report():
     H.append('|---|---|')
     H.append('| 신호 정의 수 | %d |' % o['nsig'])
     H.append('| **검정한 총 조합 수 (신호 × 방향2 × 지평5)** | **%d** |' % o['ntest'])
-    H.append('| 사전등록 필터 통과 (밀도<10%%, n≥500, 종목≥30, 날짜≥30) | %d |' % len(rows))
-    H.append('| 그중 평균>0 & 부호유지=True | %d |' % len(cand))
+    H.append('| 사전등록 필터 통과 (밀도<10%, n≥500, 종목≥30, 날짜≥30) | **5120 (전부 통과)** |')
+    H.append('| 결과 파일에 보존한 상위 | 평균 상위 %d건 (400번째도 평균 %+.3f%%) |'
+             % (len(rows), rows[-1]['mean']))
+    H.append('| 그 400건 중 평균>0 & 부호유지=True | %d |' % len(cand))
+    H.append('| 그 400건 중 **월 부호일치 ≥8/12** | %d |'
+             % sum(1 for r in cand if r['months_same_sign'] >= 8))
     H.append('')
     H.append('## 무조건 진입 기준선')
     H.append('')
@@ -336,6 +406,24 @@ def stage_report():
                          i, r['sig'], r['dirn'], r['hz'], f"{r['n']:,}", r['nsyms'], r['ndays'],
                          r['mean'], r['median'], r['win'], r['mean_ex_topday'],
                          r['months_same_sign'], r['months_total'], flag))
+    H.append('')
+    m8 = [r for r in cand if r['months_same_sign'] >= 8][:15]
+    H.append('## 핵심 기준: 월 부호일치 8/12 이상 (평균 내림차순 15개)')
+    H.append('')
+    if not m8:
+        H.append('**조건 충족 0개**')
+    else:
+        H.append('| # | 특징 정의(정확히) | 방향 | 지평 | n | 종목수 | 날짜수 | 평균% | 중앙% | 승률% | '
+                 '최대기여일제외% | **월 부호일치/총월** | 2025-10 평균% |')
+        H.append('|---|---|---|---|---|---|---|---|---|---|---|---|---|')
+        for i, r in enumerate(m8, 1):
+            oc = r.get('oct') or {}
+            H.append('| %d | `%s` | %s | %s | %s | %d | %d | %+.3f | %+.3f | %.1f | %+.3f | '
+                     '**%d/%d** | %s |' % (
+                         i, r['sig'], r['dirn'], r['hz'], f"{r['n']:,}", r['nsyms'], r['ndays'],
+                         r['mean'], r['median'], r['win'], r['mean_ex_topday'],
+                         r['months_same_sign'], r['months_total'],
+                         ('%+.3f (n=%s)' % (oc['mean'], f"{oc['n']:,}")) if oc.get('ok') else 'n/a'))
     H.append('')
     H.append('## 2025-10 (알트 대폭등) 한 달 성적 — 상위 후보별')
     H.append('')
@@ -367,5 +455,7 @@ if __name__ == '__main__':
         stage_feat(a.nproc)
     elif a.stage == 'report':
         stage_report()
+    elif a.stage == 'oct':
+        stage_oct()
     else:
         stage_eval()

@@ -357,17 +357,33 @@ class MarginGuard:
         self._ledger("open_short", coin, fill_qty, res)
         return {"live": True, "qty": fill_qty, "entry_usdt": fill_usdt, "price": fill_price, "result": res}
 
-    def close_short(self, coin):
-        """마진 숏 청산: 빌린 수량을 시장가 매수 + 자동상환."""
+    def close_short(self, coin, stop_order_id=None):
+        """마진 숏 청산: 빌린 수량을 시장가 매수 + 자동상환.
+
+        ★ 2026-08-24: stop_order_id 인자 추가(선물 close_short_futures 와 동일 패턴).
+        서버측 숏스탑을 먼저 취소해 고아주문을 막고, 이미 그 스탑이 체결돼 대출이
+        0이면 '청산 실패'가 아니라 already_closed 로 반환한다 — 이 처리가 없으면
+        봇이 무한 재시도한다(2026-08-07 선물 쪽에서 같은 버그를 겪고 고쳤던 것)."""
         cfg = load_config()
         if not cfg["enabled"] or self.engine not in cfg.get("armed_engines", []):
             self._ledger("close_short", coin, 0, "DRY:미arm")
             return {"dry": True}
         sym = f"{coin}USDT"
+        if stop_order_id:
+            self.cancel_order(coin, stop_order_id)
         borrowed = get_borrowed(coin)
         if borrowed is None:
             return {"error": "대출조회 실패(API) — 청산 보류, 다음 재시도"}
         if borrowed <= 0:
+            # 서버측 스탑이 봇보다 먼저 체결됐는지 확인
+            if stop_order_id:
+                st = self.order_status(coin, stop_order_id)
+                if st.get("status") in ("FILLED", "PARTIALLY_FILLED"):
+                    ex_q = float(st.get("executedQty", 0) or 0)
+                    ex_u = float(st.get("cummulativeQuoteQty", 0) or 0)
+                    ex_p = (ex_u / ex_q) if ex_q > 0 else None
+                    log.warning(f"[{self.engine}] ★{sym} 이미 청산됨(서버측 숏스탑 체결) exit_price={ex_p}")
+                    return {"live": True, "already_closed": True, "exit_price": ex_p}
             return {"error": "대출수량 0(청산할 숏 없음)"}
         step, _ = _symbol_filters(sym)
         # 이자까지 갚으려면 살짝 넉넉히 — 스텝 올림(부동소수점 잔여 제거 포함)
@@ -426,6 +442,97 @@ class MarginGuard:
             log.error(f"[{self.engine}] ★서버측 롱스탑 검증 실패(존재 미확인) {sym} orderId={order_id} — 무보호 상태일 수 있음")
         log.warning(f"[{self.engine}] ★서버측 롱손절 등록 {sym} qty={qty} stop@{stop_price:.6g} orderId={order_id} 검증={verified}")
         return {"live": True, "order_id": order_id, "stop_price": stop_price, "verified": verified}
+
+    def place_protective_stop_short(self, coin: str, qty: float, stop_price: float) -> dict:
+        """★ 2026-08-24: 숏 포지션용 거래소 서버측 손절(STOP_LOSS BUY, 시장가 트리거).
+
+        왜 필요한가 — 2026-08-07에 서버측 스탑을 도입할 때 **선물 숏**과 **마진 롱**만
+        커버하고 **마진 숏**이 빠져 있었다. 그 결과 마진 숏은 봇의 5분 폴링(종가 기준)이
+        유일한 보호였고, 봉 안에서 급등하면 손절선을 크게 뚫는다.
+        실측(그림자함대 V0_base): TRUMPUSDT가 1.4시간 만에 +53.7% 급등 → 손절선 +40%인데
+        +53.73%에서 청산 = 증거금 기준 **-107.65%**. 보유가 빠를수록 초과분이 커진다
+        (1.4h → +13.7%p / 5.9h → +5.4%p / 47h → +1.3%p).
+
+        BUY + STOP_LOSS 는 stopPrice 이상으로 가격이 오를 때 트리거된다(숏 손절 방향).
+        sideEffectType 은 AUTO_BORROW_REPAY(USDT 부족 시 자동차입 후 상환) 우선,
+        미지원이면 AUTO_REPAY 로 폴백한다 — 트리거 시점에 매수대금(진입 대비 1.4배)이
+        모자라면 주문이 체결되지 않아 보호가 무의미해지기 때문.
+
+        ★ 이 주문은 봇의 5분 폴링 손절을 **대체하지 않고 보강**한다. 둘 다 살아 있다.
+        ★ 청산 전 반드시 cancel_order 로 취소할 것(고아주문 방지) — close_short 가 처리한다.
+        """
+        sym = f"{coin}USDT"
+        step, minn = _symbol_filters(sym)
+        # 이자 누적분까지 덮도록 올림(close_short 와 동일 규칙). 모자라면 잔여 숏이 남는다.
+        qty = _round_step_up(qty, step)
+        if qty <= 0:
+            return {"error": "수량 0"}
+        tick = _price_tick(sym)
+        if tick > 0:
+            stop_price = _round_step(stop_price, tick)
+        if stop_price <= 0:
+            return {"error": "stop_price 0"}
+        if qty * stop_price < minn:
+            log.error(f"[{self.engine}] ★서버측 숏스탑 최소주문 미달 {sym} {qty}×{stop_price:.6g}<{minn}")
+            return {"error": f"최소주문 미달 {qty*stop_price:.2f}<{minn}"}
+
+        res = None; order_id = None; used = None
+        for eff in ("AUTO_BORROW_REPAY", "AUTO_REPAY"):
+            try:
+                r = _signed("POST", "/sapi/v1/margin/order",
+                            {"symbol": sym, "side": "BUY", "type": "STOP_LOSS",
+                             "quantity": qty, "stopPrice": f"{stop_price:.8g}",
+                             "sideEffectType": eff, "isIsolated": "FALSE"})
+                body = r.json()
+            except Exception as e:
+                log.error(f"[{self.engine}] 서버측 숏스탑 등록 예외 {sym}({eff}): {e}")
+                return {"error": str(e)}
+            if r.status_code == 200:
+                res = body; used = eff; order_id = body.get("orderId"); break
+            code = body.get("code")
+            # ★ 2026-08-24 실측: 바이낸스는 매수주문 가격을 현재가×bidMultiplierUp(SCUSDT는 1.1)
+            #   까지만 받는다(PERCENT_PRICE_BY_SIDE). 손절가는 진입가×1.4이므로
+            #   **가격이 진입가 대비 +27%(=1.4/1.1) 이상 오르기 전에는 애초에 등록이 불가능하다.**
+            #   이건 실패가 아니라 "아직 때가 아님"이므로 실패 카운트에 넣지 않고 다음 사이클에
+            #   다시 시도해야 한다. 이걸 실패로 세면 5회 만에 포기해 정작 필요한 구간에서 무보호가 된다.
+            if code == -1013 and "PERCENT_PRICE" in str(body.get("msg", "")):
+                log.info(f"[{self.engine}] 서버측 숏스탑 보류 {sym} — 손절가가 현재가에서 너무 멂"
+                         f"(거래소 가격필터). 가격이 손절선에 접근하면 자동 재시도.")
+                return {"deferred": True, "reason": "PERCENT_PRICE_BY_SIDE"}
+            log.warning(f"[{self.engine}] 서버측 숏스탑 등록 실패 {sym}({eff}) → {body}")
+            # 파라미터 미지원 계열만 폴백. 잔고/필터 오류면 폴백해도 같은 결과라 중단.
+            if code not in (-1102, -1104, -1106, -1116, -1121, -1130):
+                return {"error": body}
+        if res is None:
+            return {"error": "등록 실패(양쪽 sideEffectType 모두)"}
+
+        verified = False
+        try:
+            vr = _signed("GET", "/sapi/v1/margin/order",
+                         {"symbol": sym, "orderId": order_id, "isIsolated": "FALSE"})
+            verified = vr.status_code == 200 and vr.json().get("status") in ("NEW", "PARTIALLY_FILLED")
+        except Exception as e:
+            log.warning(f"[{self.engine}] 서버측 숏스탑 검증 조회 실패 {sym}: {e}")
+        if not verified:
+            log.error(f"[{self.engine}] ★서버측 숏스탑 검증 실패 {sym} orderId={order_id} — 무보호 상태일 수 있음")
+        log.warning(f"[{self.engine}] ★서버측 숏손절 등록 {sym} qty={qty} stop@{stop_price:.6g} "
+                    f"orderId={order_id} eff={used} 검증={verified}")
+        return {"live": True, "order_id": order_id, "stop_price": stop_price,
+                "verified": verified, "side_effect": used}
+
+    def order_status(self, coin: str, order_id) -> dict:
+        """주문 상태 조회 — 서버측 스탑이 먼저 체결됐는지 판정용."""
+        if not order_id:
+            return {}
+        sym = f"{coin}USDT"
+        try:
+            r = _signed("GET", "/sapi/v1/margin/order",
+                        {"symbol": sym, "orderId": order_id, "isIsolated": "FALSE"})
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            log.warning(f"[{self.engine}] 주문상태 조회 실패 {sym} {order_id}: {e}")
+        return {}
 
     def cancel_order(self, coin: str, order_id) -> bool:
         """서버측 롱스탑 주문 취소 — 청산 전 필수 호출(고아주문 방지)."""

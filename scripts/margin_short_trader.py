@@ -81,6 +81,21 @@ LOOKBACK = 84              # 7h = 5분봉 84개 (LOOKBACK_H*12)
 VOL_MULT = 0.0            # 거래량 필터 미사용 (검증 결과 불필요)
 HOLD_H = 48
 STOP_PCT = 40.0           # 진입가 대비 +40% 상승 시 손절(2배 청산선 +50% 안쪽)
+
+# ★ 2026-08-24: 마진 숏 서버측 손절(거래소에 STOP_LOSS 주문 사전등록) — 기본 OFF.
+#   배경: 2026-08-07 서버측 스탑 도입 때 선물 숏·마진 롱만 커버되고 마진 숏이 빠져 있었다.
+#   봇 5분 폴링(종가)만으론 봉내 급등을 못 잡아 손절선을 뚫는다(그림자 실측 최대 +13.7%p 초과).
+#   손절선(STOP_PCT)은 바꾸지 않는다 — 작동 방식만 정확해진다.
+#
+#   ⚠️ 51건 관문 진행 중이나 **2026-08-24 사용자 결정으로 즉시 적용**한다.
+#      DEADLINES.md 부칙3(확증 표본 중 규칙 변경 금지)과의 관계:
+#        - 손절선·진입조건·보유기간 등 **판정 대상 파라미터는 하나도 바꾸지 않는다**
+#        - 바뀌는 것은 "이미 있는 -40% 손절이 봉내에도 실제로 걸리는가" 뿐이다
+#        - 마진 경로는 실거래 50건 중 1건(TUT)뿐이라 판정 영향이 사실상 없다
+#        - 선물 경로(49건)는 2026-08-07부터 이미 같은 보호를 쓰고 있었다 — 오히려 일관성 복구
+#      그럼에도 실행 방식 변경이므로 51건 판정문에 이 사실을 명시할 것.
+#   문제 발생 시 이 값을 False 로 되돌리고 봇 재시작하면 즉시 이전 동작으로 복귀한다.
+SERVER_STOP_MARGIN = True
 TRAIL_TRIGGER_PCT = 15.0  # ★ 2026-08-10: 최유리(가격하락) 15%p 이상 찍으면 트레일링 무장
 TRAIL_GIVEBACK_PCT = 10.0  # 그 최고점에서 10%p 반납하면 즉시 청산(48h/스탑 기다리지 않음)
 COOLDOWN_H = 12           # 코인당 재진입 쿨다운
@@ -433,6 +448,45 @@ def main():
                 #   미검증 상태 유지, 건드리지 않음). 최유리 15%p 도달 후 10%p 반납 시 즉시 청산.
                 pos["mfe_price"] = min(pos.get("mfe_price", px), px)
                 pos["mae_price"] = max(pos.get("mae_price", px), px)
+                # ★ 2026-08-24: 마진 숏에 서버측 손절이 없던 구멍을 메움.
+                #   2026-08-07 서버측 스탑 도입 때 **선물 숏**과 **마진 롱**만 커버되고
+                #   **마진 숏**이 빠져 있었다(margin_guard엔 place_protective_stop_long만 존재).
+                #   봇 5분 폴링(종가)만으론 봉내 급등을 못 잡아 손절선을 크게 뚫는다 —
+                #   그림자함대 실측: TRUMPUSDT가 1.4h만에 +53.7% 급등, 손절선 +40%인데
+                #   +53.73%에서 청산 = 증거금 기준 -107.65%. 보유가 빠를수록 초과분이 커진다.
+                #   이미 열려 있던 무보호 포지션에도 소급 등록한다.
+                #   ★ 이 주문은 아래 폴링 손절을 대체하지 않고 보강한다. 실패해도 폴링은 그대로 작동.
+                if (SERVER_STOP_MARGIN
+                        and pos.get("venue", "margin") == "margin" and pos.get("live")
+                        and not pos.get("stop_order_id") and not pos.get("stop_giveup")
+                        and px < pos["entry_price"] * (1 + STOP_PCT/100)):
+                    try:
+                        sres = guard.place_protective_stop_short(
+                            pos["coin"], pos["qty"], pos["entry_price"] * (1 + STOP_PCT/100))
+                    except Exception as e:
+                        sres = {"error": str(e)}
+                    if sres.get("deferred"):
+                        # 거래소 가격필터로 아직 등록 불가(손절가가 현재가에서 너무 멂).
+                        # 실패가 아니므로 카운트하지 않고 조용히 다음 사이클에 재시도한다.
+                        pass
+                    elif sres.get("live") and sres.get("verified"):
+                        pos["stop_order_id"] = sres["order_id"]
+                        pos.pop("stop_fails", None)
+                        _save(POS_PATH, positions)
+                        log.warning(f"★{sym} 서버측 숏스탑 소급 등록 orderId={sres['order_id']} @{sres['stop_price']:.6g}")
+                        try: notify.send(f"🛡 {sym} 서버측 손절 등록 — 봇 다운 시에도 +{STOP_PCT:.0f}%에서 자동청산")
+                        except Exception: pass
+                    else:
+                        fails = pos.get("stop_fails", 0) + 1
+                        pos["stop_fails"] = fails
+                        log.error(f"★{sym} 서버측 숏스탑 등록 실패({fails}회) → {sres}")
+                        if fails == 1:
+                            try: notify.send(f"⚠️ {sym} 서버측 손절 등록 실패 — 봇 폴링 손절만 작동 중")
+                            except Exception: pass
+                        if fails >= 5:
+                            pos["stop_giveup"] = True   # 매 사이클 재시도로 API 낭비·레이트리밋 방지
+                            log.error(f"★{sym} 서버측 숏스탑 5회 실패 — 재시도 중단(폴링 손절만 유효)")
+                        _save(POS_PATH, positions)
                 stop_hit = px >= pos["entry_price"] * (1 + STOP_PCT/100)
                 cur_pnl_pct = (1 - px/pos["entry_price"]) * 100
                 peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
@@ -446,7 +500,9 @@ def main():
                     lev = load_futures_config().get("leverage", 2)
                     venue_tag = "선물"
                 else:
-                    cres = guard.close_short(pos["coin"])
+                    # ★ 2026-08-24: 서버측 숏스탑 취소(고아주문 방지) + 이미 그 스탑이 체결됐으면
+                    #   already_closed 로 받아 무한 재시도를 막는다(선물 경로와 동일 패턴).
+                    cres = guard.close_short(pos["coin"], stop_order_id=pos.get("stop_order_id"))
                     lev = load_config().get("leverage", 2)
                     venue_tag = "마진"
                 # ★ 실전 포지션은 실제 청산(live) 확인 전엔 로컬에서 지우지 않음.
@@ -650,7 +706,26 @@ def main():
                                           "exit_ts": now + HOLD_H*3600, "entry_iso": datetime.now(KST).isoformat(), "live": True,
                                           "btc_entry": tick.get("BTCUSDT", (None,))[0],
                                           "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
-                        log.warning(f"★실전 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개")
+                        # ★ 2026-08-24: 진입 직후 서버측 손절 등록 — 선물 경로와 같은 보호수준으로 맞춤.
+                        #   실패해도 포지션은 유지되고 봇 폴링 손절이 계속 작동한다(무보호 아님).
+                        sres = {"skip": "SERVER_STOP_MARGIN=False"}
+                        if SERVER_STOP_MARGIN:
+                            try:
+                                sres = guard.place_protective_stop_short(
+                                    coin, res["qty"], positions[sym]["entry_price"] * (1 + STOP_PCT/100))
+                            except Exception as e:
+                                sres = {"error": str(e)}
+                        if not SERVER_STOP_MARGIN or sres.get("deferred"):
+                            # deferred = 거래소 가격필터로 아직 등록 불가. 포지션 감시 루프가
+                            # 가격이 손절선에 접근하면 자동으로 다시 시도한다.
+                            pass
+                        elif sres.get("live") and sres.get("verified"):
+                            positions[sym]["stop_order_id"] = sres["order_id"]
+                        else:
+                            log.error(f"🚨 {sym} 서버측 숏스탑 등록 실패 — 봇 폴링 손절만 작동 → {sres}")
+                            try: notify.send(f"🚨 {sym} 마진숏 서버측 손절 등록 실패 — 봇 폴링만 유효, 확인 필요")
+                            except Exception: pass
+                        log.warning(f"★실전 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개 (서버스탑={positions[sym].get('stop_order_id')})")
                         try: notify.send(f"📉 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% (증거금{margin:.0f}USDT)")
                         except Exception: pass
                     else:

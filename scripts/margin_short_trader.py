@@ -42,8 +42,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import requests
 from bithumb import notify
-from bithumb.margin_guard import MarginGuard, live_status, get_margin_usdt, load_config, get_borrowed
-from bithumb.binance_guard import BinanceGuard, load_config as load_futures_config, get_futures_usdt
+from bithumb.margin_guard import (MarginGuard, live_status, get_margin_usdt, load_config,
+                                  get_borrowed, get_held)
+from bithumb.binance_guard import (BinanceGuard, load_config as load_futures_config, get_futures_usdt,
+                                   get_futures_position, _signed as _fut_signed)
+from bithumb.margin_guard import _signed as _mgn_signed
 
 Path("logs").mkdir(exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [MSHORT] %(message)s",
@@ -377,6 +380,72 @@ def log_trade(row):
             pass
 
 
+# ★ 2026-08-25: 외부청산(수동·거래소측) 감지.
+#   봇은 손절·트레일링·만기 중 하나가 걸릴 때만 거래소를 조회했다. 셋 다 아니면 포지션이
+#   이미 없어도 계속 보유 중이라 믿는다 — 2026-08-25 TUTUSDT를 사용자가 앱에서 직접 청산했는데
+#   봇은 만기(08-26)까지 모르고 있었다. 방치하면 (a) 거래기록이 며칠 뒤 엉뚱한 가격으로 남고
+#   (b) 슬롯이 계속 막혀 신규진입을 못 한다. 매 사이클 실제 포지션 존재를 대조한다.
+EXT_CHECK_SEC = 120        # 포지션당 최소 조회 간격(API 절약)
+
+# 잔여수량이 이 이하로 떨어지면 청산된 것으로 본다.
+#   ★ 2026-08-25 실측: 마진계좌에 과거 거래 15종목의 대출 찌꺼기가 남아 있다
+#   (SC 134.79, SLP 107.84, G 17.50 ... 합계 18.57 USDT, 순숏 1.43 USDT, 마진레벨 14.6로 무해).
+#   AUTO_REPAY가 원금은 갚아도 이자·최소단위 반올림 때문에 몇 센트씩 남는다.
+#   따라서 "대출 == 0"으로 판정하면 마진 포지션은 **영원히 청산으로 인식되지 않는다.**
+#   원래 수량의 5% 미만이거나 잔여 명목가 1 USDT 미만이면 청산으로 본다.
+EXT_RESIDUAL_FRAC = 0.05
+EXT_RESIDUAL_USDT = 1.0
+
+def exchange_position_gone(sym, coin, venue, qty=0.0, px=0.0):
+    """실전 포지션이 거래소에서 사라졌는가. True/False/None(조회실패).
+    ★ 조회 실패는 None — '확인 못 한 것'을 '청산됨'으로 오판하면 실제 열린 포지션을
+    추적 포기하게 된다(get_futures_position·get_borrowed와 동일한 안전패턴).
+    qty/px를 주면 찌꺼기 잔량을 청산으로 인식한다(위 주석)."""
+    try:
+        if venue == "futures":
+            p = get_futures_position(sym)
+            if p is None: return None
+            rem = abs(p.get("amt", 0.0))
+        else:
+            b = get_borrowed(coin)
+            if b is None: return None
+            # ★ 순숏 = 대출 − 보유. 청산 직후 상환 전 상태(FF: 대출 101.5 / 보유 95.1 = 순 6.5)를
+            #   "아직 열려있다"로 오판하지 않기 위함. 진짜 열린 숏은 코인을 팔았으므로 보유가 0이다.
+            h = get_held(coin)
+            rem = max(0.0, b - (h or 0.0))
+        if rem <= 0: return True
+        if qty and qty > 0 and rem <= qty * EXT_RESIDUAL_FRAC: return True
+        if px and px > 0 and rem * px <= EXT_RESIDUAL_USDT: return True
+        return False
+    except Exception as e:
+        log.warning(f"외부청산 조회 예외 {sym}: {e}")
+        return None
+
+
+def external_exit_fill(sym, venue, entry_ts):
+    """청산 체결가와 실현손익을 거래소 체결내역에서 복원. (가격, 실현손익) 또는 (None, None).
+    숏 청산은 BUY 체결이다. entry_ts(초) 이후 것만 본다."""
+    try:
+        st = int(entry_ts * 1000)
+        if venue == "futures":
+            r = _fut_signed("GET", "/fapi/v1/userTrades", {"symbol": sym, "startTime": st, "limit": 500})
+        else:
+            r = _mgn_signed("GET", "/sapi/v1/margin/myTrades", {"symbol": sym, "startTime": st, "limit": 500})
+        if r.status_code != 200:
+            log.warning(f"외부청산 체결조회 실패 {sym}: {r.status_code} {r.text[:120]}")
+            return None, None
+        buys = [t for t in r.json() if (t.get("side") == "BUY" or t.get("isBuyer") is True)]
+        if not buys: return None, None
+        q = sum(float(t["qty"]) for t in buys)
+        if q <= 0: return None, None
+        vwap = sum(float(t["qty"]) * float(t["price"]) for t in buys) / q
+        real = sum(float(t.get("realizedPnl", 0) or 0) for t in buys)
+        return vwap, (real if real else None)
+    except Exception as e:
+        log.warning(f"외부청산 체결조회 예외 {sym}: {e}")
+        return None, None
+
+
 def log_shadow(sym, pump_pct, price, blocked_by, open_exposure, cap):
     """★ 2026-08-15: 캡에 막혀 진입 못 한 신호 기록(순수 관찰, 주문 없음).
     51건 도달 시 '놓친 신호가 실제로 어떻게 됐을지'를 사후 검증하기 위한 데이터."""
@@ -441,6 +510,45 @@ def main():
                 pos = positions[sym]
                 t = tick.get(sym)
                 px = t[0] if t else pos["entry_price"]
+                # ★ 2026-08-25: 외부청산(수동·거래소측) 감지 — 근거는 exchange_position_gone() 주석.
+                #   실제 포지션이 사라졌으면 실체결가로 기록하고 슬롯을 비운다. 조회실패(None)는
+                #   아무것도 하지 않는다 — 확인 못 한 것을 청산으로 오판하지 않는다.
+                if pos.get("live") and now - pos.get("_ext_chk", 0) >= EXT_CHECK_SEC:
+                    pos["_ext_chk"] = now
+                    if exchange_position_gone(sym, pos["coin"], pos.get("venue", "margin"),
+                                             qty=pos.get("qty", 0.0) or 0.0, px=px) is True:
+                        venue = pos.get("venue", "margin")
+                        venue_tag = "선물" if venue == "futures" else "마진"
+                        g = fut_guard if venue == "futures" else guard
+                        lev = (load_futures_config() if venue == "futures" else load_config()).get("leverage", 2)
+                        fill, real = external_exit_fill(sym, venue, pos.get("entry_ts", now))
+                        xpx = fill if fill else px
+                        if pos.get("stop_order_id"):      # 고아 조건주문 정리
+                            try: g.cancel_order(pos["coin"], pos["stop_order_id"])
+                            except Exception: pass
+                        pnl_pct = (1 - xpx/pos["entry_price"]) * 100
+                        pnl_usdt = real if real is not None else pos["margin"] * lev * (pnl_pct/100)
+                        try: g.record_realized(pnl_usdt)
+                        except Exception: pass
+                        mfe_p = pos.get("mfe_price", pos["entry_price"]); mae_p = pos.get("mae_price", pos["entry_price"])
+                        log_trade(dict(entry_time=pos["entry_iso"], exit_time=datetime.now(KST).isoformat(),
+                                       symbol=sym, pump_2h=pos["pump"], vol_mult=pos["vr"],
+                                       entry_price=pos["entry_price"], exit_price=xpx, margin_usdt=pos["margin"],
+                                       pnl_pct=round(pnl_pct,2), pnl_usdt=round(pnl_usdt,2), live=pos["live"],
+                                       reason=f"외부청산({'실체결가' if fill else '현재가추정'})[{venue_tag}]",
+                                       btc_entry=pos.get("btc_entry"), btc_exit=tick.get("BTCUSDT",(None,))[0],
+                                       mfe_pct=round((1-mfe_p/pos["entry_price"])*100,2),
+                                       mae_pct=round((mae_p/pos["entry_price"]-1)*100,2),
+                                       listing_age_days=pos.get("listing_age_days"), qvol_24h=pos.get("qvol_24h")))
+                        log.warning(f"★{venue_tag}숏 외부청산 감지 {sym} @{xpx:g} "
+                                    f"pnl={pnl_pct:+.2f}%({pnl_usdt:+.2f}USDT) — 거래소에 포지션 없음, 슬롯 반환")
+                        try: notify.send(f"🔎 {venue_tag}숏 외부청산 감지 {sym} — 봇이 아닌 경로로 청산됨. "
+                                         f"pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT) 기록 완료, 슬롯 반환")
+                        except Exception: pass
+                        strikes[pos["coin"]] = 0
+                        del positions[sym]
+                        _save(POS_PATH, positions)
+                        continue
                 # ★ 2026-07-27: 청산구조(트레일링·손절폭) 변경은 3개 AI(제미나이·챗GPT·마누스) 공통권고로
                 #   "지금 표본(n=2)으론 시기상조, 표본 더 쌓고 절제백테 먼저"로 보류되어 MFE/MAE만 그림자
                 #   기록해왔음. ★ 2026-08-10: 그 사이 실거래(COOKIE +6%→-25%, TST +24%→-4.5%)에서

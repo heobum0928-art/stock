@@ -110,3 +110,6 @@ examples/anomaly_detect/_model_normal_dirs.json
 
 train/data/images/
 train/data/masks/
+
+# 연구용 원자료 (5분봉 805종목 1.1GB) — 재다운로드에 수 시간 걸려 보존하되 커밋하지 않음
+research/

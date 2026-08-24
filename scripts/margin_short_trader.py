@@ -272,6 +272,18 @@ BTC_VOL_THRESHOLD = 3.26  # ★ 2026-08-07: 155건 백테스트 레짐분석 —
 # 기준으로 나눠보니 평온장(≤중앙값) 승률70.9%·평균+8.36% vs 변동장(>중앙값) 승률59.3%·평균+0.04%
 # (거의 본전). 학술연구(암호화폐 과잉반응 반전효과가 고변동성 시기엔 약화/역전)와 일치하는 패턴
 # 확인 후 도입 — 변동장에서는 신규진입 자체를 보류.
+#
+# ★★ 2026-08-25: 사용자 지시로 OFF. "이제 btc 무시해" / "내가 정한다 무시해".
+#   근거: 2,399건 재검증(docs/PREREG_REGIME_FILTER.md)에서 5개 기준 중 3개 미달.
+#     · 부트스트랩 95% CI [-6.549, +0.728] — 0 포함
+#     · **2025-10 제외 시 +0.768%p로 부호 반전** (효과가 그 한 달에만 있었다)
+#     · 월별 부호일치 7/11 (기준 8 미달)
+#   반대 근거(내가 사용자에게 보고한 것): 방향 자체는 맞았고(변동장 -6.12% vs 평온장 -3.22%),
+#   전략 기대값이 음수라 **거래를 줄이면 무엇을 줄이든 손실이 준다.**
+#   필터 적용 총손익 -3,531 vs 미적용 -11,509. 끄면 거래 약 2.2배, 손실도 그만큼 늘 것으로
+#   예상된다고 보고했고 사용자가 그 위에서 결정했다.
+#   되돌리려면 아래를 True로 바꾸고 봇 재시작하면 된다. 코드는 그대로 남겨둔다.
+REGIME_FILTER_ON = False
 _btc_vol_cache = {"pct": None, "ts": 0}
 
 
@@ -486,6 +498,7 @@ def main():
     _bal0 = get_margin_usdt()
     log.info(f"마진숏 트레이더 시작 [{mode}] — 대출가능 {len(UNIVERSE)}코인 + 선물폴백 {len(FUTURES_UNIVERSE)}코인, "
              f"{LOOKBACK_H}h+{PUMP_PCT:.0f}%급등→{HOLD_H}h숏+스탑{STOP_PCT:.0f}% "
+             f"| 변동장필터 {'ON(BTC24h>%.2f%% 차단)' % BTC_VOL_THRESHOLD if REGIME_FILTER_ON else '★OFF(사용자지시 08-25)'} "
              f"| 증거금상한 {ls['global_cap_usdt']}USDT {ls['leverage']}배 | 마진잔고 "
              f"{'조회실패' if _bal0 is None else f'{_bal0:.1f}'}")
     try: notify.send(f"📉 마진숏 트레이더 시작 [{mode}] — {LOOKBACK_H}h+{PUMP_PCT:.0f}% 급등주 숏, 대출가능 {len(UNIVERSE)}코인+선물폴백")
@@ -747,7 +760,8 @@ def main():
             # ★ 2026-08-07: 변동장(BTC 24h변동폭>3.26%)이면 신규진입 전면 보류 — 레짐분석 근거는
             # BTC_VOL_THRESHOLD 정의부 주석 참조. 기존 포지션 청산 로직(위쪽)은 그대로 작동.
             btc_vol = btc_volatility_pct()
-            regime_blocked = btc_vol is not None and btc_vol > BTC_VOL_THRESHOLD
+            regime_blocked = (REGIME_FILTER_ON and btc_vol is not None
+                              and btc_vol > BTC_VOL_THRESHOLD)
             if regime_blocked and now - last_regime_alert_ts > 1800:
                 log.info(f"변동장 감지(BTC 24h변동 {btc_vol:.2f}%>{BTC_VOL_THRESHOLD}%) — 신규진입 전면 보류")
                 last_regime_alert_ts = now

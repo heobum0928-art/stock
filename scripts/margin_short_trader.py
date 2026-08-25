@@ -141,6 +141,14 @@ FUT_MARGIN_PER_TRADE = 30.0
 
 BUF_PATH = ROOT / "data" / "margin_short_buf.json"
 POS_PATH = ROOT / "data" / "margin_short_pos.json"
+# ★ 2026-08-25(버그헌터 발견): 완화판 봇(margin_short_wide_trader)의 포지션 — 읽기 전용.
+#   같은 코인을 두 엔진이 동시에 잡으면 거래소에는 숏이 하나로 합쳐지는데(one-way 모드),
+#   청산은 `qty=abs(positionAmt)` 전량 시장가(binance_guard.py:538)이고 서버측 스탑은
+#   `closePosition:true`(:400)라 **먼저 청산하는 쪽이 상대 포지션까지 통째로 닫는다.**
+#   마진도 close_short()가 계좌 전체 대출잔량을 상환해 동일. 진입범위가 15~30% vs 30~40%로
+#   안 겹치게 설계했어도 시간차로 뚫린다(완화가 18%에 잡은 뒤 33%까지 오르면 원본이 잡음).
+#   완화봇에는 이미 반대 방향 체크가 있고, 이쪽에도 넣어 **양방향**으로 막는다.
+OTHER_ENGINE_POS_PATH = ROOT / "data" / "margin_short_wide_pos.json"
 TRADES_PATH = ROOT / "data" / "margin_short_trades.csv"
 # ★ 2026-08-15: 엔진상한(캡)에 막혀 진입 못 한 신호를 "그림자 기록"으로 남김. 전략 로직은
 #   전혀 건드리지 않고 관찰만 — 51건 도달 시 "캡 때문에 놓친 신호들이 실제로 얼마나 벌었을지"를
@@ -791,6 +799,15 @@ def main():
             # ★ 2026-07-21: 대출가능(UNIVERSE) ∪ 선물상장(FUTURES_UNIVERSE) 전체 스캔.
             #   대출가능하면 마진 우선(경제성 더 좋음, 백테스트 확인), 대출 안 되고 선물만 있으면 폴백.
             UNIVERSE_SET = set(UNIVERSE)
+            # ★ 2026-08-25: 상대 엔진(완화판) 포지션 — 사이클당 1회만 읽는다.
+            #   실패 시 None(=이번 사이클 신규진입 전면 보류). _load()처럼 {}로 삼키면
+            #   "상대가 아무것도 안 들고 있다"로 오판해 겹침 진입을 조용히 허용하게 된다.
+            try:
+                other_pos = json.loads(OTHER_ENGINE_POS_PATH.read_text(encoding="utf-8")) \
+                            if OTHER_ENGINE_POS_PATH.exists() else {}
+            except Exception as e:
+                other_pos = None
+                log.warning(f"상대엔진 포지션 조회 실패({e}) — 이번 사이클 신규진입 보류(겹침 방지)")
             fut_cfg = load_futures_config()
             fut_caps = fut_cfg.get("engine_caps_usdt", {})
             # ★ 2026-08-07: 변동장(BTC 24h변동폭>3.26%)이면 신규진입 전면 보류 — 레짐분석 근거는
@@ -810,6 +827,12 @@ def main():
                 px, chg24, qvol = t
                 if px <= 0 or qvol < MIN_QUOTE_VOL: continue
                 if sym in positions or cooldown.get(sym, 0) > now:
+                    continue
+                # ★ 2026-08-25: 완화판 봇이 같은 코인을 들고 있으면 스킵(상세는 OTHER_ENGINE_POS_PATH 주석).
+                #   읽기 실패를 조용히 통과시키지 않는다 — 못 읽으면 겹침 위험을 알 수 없으므로 보수적으로 스킵.
+                if other_pos is None:
+                    continue
+                if sym in other_pos:
                     continue
                 if chg24 < PRESCREEN_24H:      # 1차 스크리닝 (klines 조회 절약)
                     continue

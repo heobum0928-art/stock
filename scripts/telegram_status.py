@@ -113,15 +113,22 @@ def _shadow_summary():
 def build_text():
     rows = []
 
-    ms = ROOT / "data" / "margin_short_pos.json"
-    if ms.exists():
+    # ★ 2026-08-25(버그헌터 발견, 즉시수정): 완화판 봇(margin_short_wide_trader)의 포지션
+    #   파일을 안 읽어서, 실거래 포지션이 열려 있는데도 "보유 포지션 없음"으로 오보하고 있었다.
+    #   [포지션현황]은 화이트리스트를 통과하는 몇 안 되는 알림이고 tg_bot 시작 멘트로도 쓰여
+    #   사용자가 포지션을 인지하는 주 경로다. 어느 봇 것인지 구분해서 보여준다.
+    for fname, tag in (("margin_short_pos.json", "숏"),
+                       ("margin_short_wide_pos.json", "숏(완화)")):
+        ms = ROOT / "data" / fname
+        if not ms.exists():
+            continue
         for sym, p in json.loads(ms.read_text(encoding="utf-8")).items():
             cur = price(sym)
             pnl_pct = (1 - cur / p["entry_price"]) * 100
             pnl_usdt = p["margin"] * 2 * (pnl_pct / 100)
             funding, comm = _fees(sym, p["entry_ts"])
             net_usdt = pnl_usdt + funding + comm
-            rows.append((p["coin"], "숏", pnl_pct, net_usdt, _remain_h(p.get("exit_ts"))))
+            rows.append((p["coin"], tag, pnl_pct, net_usdt, _remain_h(p.get("exit_ts"))))
 
     ml = ROOT / "data" / "margin_manual_long_pos.json"
     if ml.exists():

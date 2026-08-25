@@ -70,6 +70,7 @@ HANG_CHECK_OVERRIDE_SEC = {
     #   막던 "손절 지연"은 이미 서버측 손절이 대신 막고 있다 — 문턱을 늘려도 실위험 증가 없음.
     #   사용자 확인 후 적용("바꿔", 2026-08-25).
     "margin_short_trader": 21600,
+    "margin_short_wide_trader": 21600,   # ★ 2026-08-25: 원본과 동일 구조·동일 폴링이라 같은 값
     "accum_trader": 5400,
     # ★ 2026-08-17: 위 세 봇과는 원인이 다른 오탐 — 이 둘은 폴링주기 자체는 60초로 짧은데,
     # 사이클당 실연산(requests.get 응답대기+간단한 float비교+JSON저장)이 너무 가벼워서 CPU
@@ -154,6 +155,10 @@ BOTS = {
     # ②역할 종료: 검증된 실전봇(margin_short_trader, 현물API 사용·정상)이 대체.
     # "blowoff_short_paper":   ROOT / "scripts" / "blowoff_short_paper.py",
     "margin_short_trader":   ROOT / "scripts" / "margin_short_trader.py",  # ★거래량폭발 급등주 마진숏 실전 (검증완료, 증거금상한100·2배, 2026-07-11)
+    # ★ 2026-08-25(버그헌터 발견): 완화판(진입 7h+15~30%)도 실거래 봇인데 여기 없어서 수동기동
+    #   상태였다 — 크래시·행·재부팅 시 재시작이 안 돼 만기청산·트레일링·외부청산감지·역행경보가
+    #   전부 멈춘다(서버측 STOP_MARKET만 남음). 2026-08-22 core_lev 누락 사고와 같은 구조라 등록.
+    "margin_short_wide_trader": ROOT / "scripts" / "margin_short_wide_trader.py",  # ★진입완화판 마진숏 실전 (2026-08-25 신설)
     # "margin_manual_long_trader" 제거 (2026-08-20, 기록감사 재확인): 08-15에 이미 발견된 대로
     # __main__ 블록이 없어 watchdog이 등록해도 프로세스가 실제로 뜬 적이 없음(실측 확인 —
     # 커맨드라인에 이 파일이 걸린 프로세스 0개). 30~60초마다 "재기동"만 반복하는 완전한 placebo.

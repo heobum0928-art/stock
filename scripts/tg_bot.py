@@ -343,7 +343,16 @@ def main() -> None:
         sys.exit(1)
 
     log.info(f"텔레그램 챗봇 시작 (chat_id={CHAT_ID})")
-    send("✅ 트레이딩 봇 챗봇 시작\n" + HELP_TEXT)
+    # ★ 2026-08-25(사용자 요청): 시작할 때마다 긴 명령어 목록을 보내던 걸 상태 요약으로 교체.
+    #   watchdog가 tg_bot을 CPU행상태로 오탐해 90분마다 재시작시켜(오늘 로그로 확인됨) 이 멘트가
+    #   반복적으로 왔었음 — 내용 자체를 유용한 것(포지션 현황)으로 바꾼다. 명령어 목록은
+    #   /help·/start로 그대로 볼 수 있다(HELP_TEXT는 안 지웠음).
+    try:
+        from scripts import telegram_status
+        send("✅ 트레이딩 봇 챗봇 시작\n" + telegram_status.build_text())
+    except Exception as e:
+        log.error(f"시작 상태조회 실패: {e}")
+        send("✅ 트레이딩 봇 챗봇 시작 (상태 조회 실패 — /status 로 직접 확인)")
 
     offset = 0
     last_manual_check = 0.0

@@ -85,6 +85,20 @@ VOL_MULT = 0.0            # 거래량 필터 미사용 (검증 결과 불필요)
 HOLD_H = 48
 STOP_PCT = 40.0           # 진입가 대비 +40% 상승 시 손절(2배 청산선 +50% 안쪽)
 
+# 2026-08-25: 역행 경보 + 위험구간 고속감시. 사용자 요청("-20% 넘어갈 때 알려주고,
+#   그땐 긴급으로 1분 단위로 확인하고. 매도는 내가 할게").
+#   **알림만 보낸다. 주문은 하지 않는다.** 청산 규칙(손절 +40%, 트레일링)은 그대로다.
+#   단계는 증거금 기준 손실 %다(거래소 앱 ROI와 같은 잣대. 명목 = 이것의 절반).
+#   각 단계는 포지션당 한 번만 울린다. 회복 통계는 2026-08-25 백테스트 2,399건 실측
+#   (research/m5bt/drawdown_recover.py, 엔진 재현검증 -4.798% 통과).
+ALERT_DD_LEVELS = [20.0, 40.0, 60.0]
+ALERT_DD_STATS = {   # 증거금 손실% : (그 지점 밟은 건수, 플러스로 끝난 비율%, 최종 중앙값%)
+    20.0: (1447, 42.6, -16.9),
+    40.0: (917, 30.2, -79.2),
+    60.0: (638, 15.4, -80.3),
+}
+URGENT_POLL_SEC = 20      # 위험구간 진입 시 폴링 간격(평시 POLL_SEC=60)
+
 # ★ 2026-08-24: 마진 숏 서버측 손절(거래소에 STOP_LOSS 주문 사전등록) — 기본 OFF.
 #   배경: 2026-08-07 서버측 스탑 도입 때 선물 숏·마진 롱만 커버되고 마진 숏이 빠져 있었다.
 #   봇 5분 폴링(종가)만으론 봉내 급등을 못 잡아 손절선을 뚫는다(그림자 실측 최대 +13.7%p 초과).
@@ -519,6 +533,7 @@ def main():
             #   먼저 도는 동안 청산이 지연되는 걸 확인(이번엔 가격이 유리하게 움직여 손해는 없었음,
             #   수동청산으로 정리). 포지션 점검은 API콜이 열린 포지션 개수만큼(보통 0~1개)이라 거의
             #   즉시 끝남 — 나머지 무거운 작업보다 항상 먼저 돌게 둔다.
+            urgent = False   # 2026-08-25: 위험구간이면 아래 루프에서 True
             for sym in list(positions.keys()):
                 pos = positions[sym]
                 t = tick.get(sym)
@@ -610,6 +625,27 @@ def main():
                         _save(POS_PATH, positions)
                 stop_hit = px >= pos["entry_price"] * (1 + STOP_PCT/100)
                 cur_pnl_pct = (1 - px/pos["entry_price"]) * 100
+                # 2026-08-25: 역행 경보(알림 전용, 주문 없음) — 상세는 ALERT_DD_LEVELS 주석.
+                _lev = (load_futures_config() if pos.get("venue") == "futures" else load_config()).get("leverage", 2)
+                dd = -cur_pnl_pct * _lev          # 증거금 기준 손실(양수 = 손실)
+                if pos.get("live") and dd >= min(ALERT_DD_LEVELS):
+                    urgent = True
+                    done = pos.setdefault("dd_alerted", [])
+                    for lv in ALERT_DD_LEVELS:
+                        if dd >= lv and lv not in done:
+                            done.append(lv); _save(POS_PATH, positions)
+                            n_, wr_, md_ = ALERT_DD_STATS[lv]
+                            stop_px = pos["entry_price"] * (1 + STOP_PCT/100)
+                            log.warning(f"{sym} 역행경보 -{lv:.0f}%(증거금) 도달 — 현재 -{dd:.1f}%, "
+                                        f"가격 {px:g}, 손절선 {stop_px:.6g}")
+                            try:
+                                notify.send("\n".join([
+                                    f"⚠️ {sym} 증거금 -{lv:.0f}% 도달 (현재 {-dd:+.1f}%)",
+                                    f"진입 {pos['entry_price']:.6g} → 현재 {px:.6g}",
+                                    f"손절선 {stop_px:.6g} (증거금 -{STOP_PCT*_lev:.0f}%)",
+                                    f"과거 이 지점 {n_}건 중 {wr_:.1f}%가 플러스로 끝남 (최종 중앙값 {md_:+.1f}%)",
+                                    "※ 봇은 매도하지 않습니다. 판단은 직접 하세요."]))
+                            except Exception: pass
                 peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
                 trail_hit = peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
                 if not stop_hit and not trail_hit and now < pos["exit_ts"]:
@@ -911,7 +947,8 @@ def main():
             _save(LISTING_AGE_CACHE_PATH, listing_age_cache)
         except Exception as e:
             log.error(f"루프오류: {e}")
-        time.sleep(POLL_SEC)
+        # 2026-08-25: 위험구간(증거금 -20% 이하 포지션 존재)이면 고속 감시. 주문 로직은 불변.
+        time.sleep(URGENT_POLL_SEC if urgent else POLL_SEC)
 
 
 if __name__ == "__main__":

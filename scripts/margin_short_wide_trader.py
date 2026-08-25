@@ -968,7 +968,17 @@ def main():
                             # 가격이 손절선에 접근하면 자동으로 다시 시도한다.
                             pass
                         elif sres.get("live") and sres.get("verified"):
+                            # ★ 2026-08-26(점검 발견, 즉시수정): 여기서 provisional 플래그를
+                            #   안 남겨서 **진입 경로로 걸린 임시 스탑이 영영 정식으로 승격되지
+                            #   않았다.** 진입 직후엔 현재가≈진입가라 정식 손절선(진입가×1.4)이
+                            #   거래소 상한(현재가×1.2)을 항상 초과 → 100% 임시 스탑이 걸리는데,
+                            #   플래그가 없으면 감시루프의 _need_stop이 영구 False가 된다.
+                            #   결과: 실효 손절선이 명목 +40%가 아니라 **+17.6%**가 된다
+                            #   (증거금 기준 -80%가 아니라 -35.2%). 청산 규칙이 코드 부작용으로
+                            #   바뀌는 것이라 51건 관문 표본까지 오염시킨다.
                             positions[sym]["stop_order_id"] = sres["order_id"]
+                            if sres.get("provisional"):
+                                positions[sym]["stop_provisional"] = True
                         else:
                             log.error(f"🚨 {sym} 서버측 숏스탑 등록 실패 — 봇 폴링 손절만 작동 → {sres}")
                             try: notify.send(f"[완화] 🚨 {sym} 마진숏 서버측 손절 등록 실패 — 봇 폴링만 유효, 확인 필요")

@@ -525,6 +525,18 @@ class MarginGuard:
                     cur = _price(sym)
                     up = _bid_multiplier_up(sym)
                     prov = cur * up * 0.98          # 필터 경계에서 2% 안쪽
+                    # ★ 2026-08-26(점검 발견): 임시 스탑이 **승격 문턱보다 아래**면 승격 전에
+                    #   먼저 트리거돼 영영 정식 손절선으로 못 간다(ZRO 실측: 임시 1.415 <
+                    #   승격문턱 1.456 → 실효 손절이 명목 +13.4%로 설계 +40%의 1/3).
+                    #
+                    #   그렇다고 등록을 포기하면 **진입 직후 완전 무보호**가 된다(2026-08-26
+                    #   새벽에 고친 바로 그 상태로 되돌아감). 둘 다 나쁘므로 이렇게 정리한다:
+                    #   - 임시 스탑은 **그대로 건다**(무보호보다 낫다)
+                    #   - 대신 `below_promote` 플래그를 올려 호출부가 이 사실을 알게 한다.
+                    #     호출부는 승격 판정을 "임시 트리거가가 아니라 **현재가**가 승격문턱을
+                    #     넘었는가"로 하므로, 가격이 오르는 도중 승격 기회를 실제로 잡는다.
+                    _promote_at = stop_price / up if up > 0 else stop_price
+                    _below = prov < _promote_at
                     if tick > 0:
                         prov = _round_step(prov, tick)
                     if prov > cur and qty * prov >= minn:
@@ -539,6 +551,7 @@ class MarginGuard:
                                             f"(원래 손절선 {stop_price:.6g}은 거래소 필터로 아직 불가) "
                                             f"orderId={b2.get('orderId')}")
                                 return {"live": True, "verified": True, "provisional": True,
+                                        "below_promote": _below, "promote_at": _promote_at,
                                         "order_id": b2.get("orderId"), "stop_price": prov,
                                         "target_stop_price": stop_price, "effect": eff2}
                             if b2.get("code") not in (-1102, -1104, -1106, -1116, -1121, -1130):

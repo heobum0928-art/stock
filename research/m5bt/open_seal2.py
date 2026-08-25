@@ -27,20 +27,30 @@ assert HALF in ('disc', 'hold')
 # ── 후보 정의: (표시명, 방향, 지평, 출처스윕, 판정함수) ───────────────────────
 # 각 판정함수는 원본 스윕의 특징 계산 결과를 받아 bool 배열을 돌려준다.
 
+def _du(d, w):
+    """원본 bsweep_momentum.features()의 du 계산 그대로 (61-70행).
+    ★ 2026-08-25 1차 재현이 어긋난 원인 두 가지를 여기서 고침:
+        (a) 저점은 **저가(low)가 아니라 종가(close)의 롤링 최저**다. low를 쓰면 du가
+            과대계산돼 신호가 더 많이 잡힌다(후보1 19,393 vs 원본 17,024).
+        (b) 원본은 시간 연속성(cont) 위반 구간을 NaN 처리한다 — 데이터 결손 구간의
+            가짜 신호를 배제. 1차 재현엔 이 체크가 없었다."""
+    t, c = d['t'], d['c']
+    n = len(t)
+    cont = np.zeros(n, bool)
+    if n >= w:
+        cont[w - 1:] = (t[w - 1:] - t[:n - w + 1]) == (w - 1) * L.BAR
+    mn = pd.Series(np.asarray(c, float)).rolling(w, min_periods=w).min().to_numpy()
+    du = (c / mn - 1.0) * 100.0
+    du[~cont] = np.nan
+    return du
+
 def sig_c1(d):
     """1. 288봉 저점대비 상승폭 >= +50% (LONG) — 모멘텀 스윕, STRIDE=12"""
-    lo = _roll_min(d['l'], 288)
-    du = (d['c'] / lo - 1.0) * 100.0
-    return du >= 50.0
+    return _du(d, 288) >= 50.0
 
 def sig_c2(d):
     """2. 48봉 저점대비 상승폭 >= +30% (LONG) — 모멘텀 스윕, STRIDE=12"""
-    lo = _roll_min(d['l'], 48)
-    du = (d['c'] / lo - 1.0) * 100.0
-    return du >= 30.0
-
-def _roll_min(x, w):
-    return pd.Series(np.asarray(x, float)).rolling(w, min_periods=w).min().to_numpy()
+    return _du(d, 48) >= 30.0
 
 def sig_c3(d):
     """3. max/sum(qv,288) >= 0.7 (SHORT) — 거래량 스윕 build_features 그대로"""

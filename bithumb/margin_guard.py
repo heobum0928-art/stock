@@ -158,6 +158,21 @@ def _price_tick(sym):
         return 0.0
 
 
+def _bid_multiplier_up(sym) -> float:
+    """PERCENT_PRICE_BY_SIDE의 bidMultiplierUp — 매수주문 가격 상한 배수.
+    ★ 2026-08-26: 바이낸스는 BUY 주문 가격을 현재가×이 값까지만 받는다(실측 ZRO/FF 모두 1.2).
+    숏 손절선은 진입가×1.4라 진입 직후에는 구조적으로 등록이 불가능하다 —
+    place_protective_stop_short()가 임시 보호스탑 가격을 계산할 때 쓴다.
+    조회 실패 시 1.2(실측값)로 보수적 폴백."""
+    try:
+        r = requests.get(f"{BASE}/api/v3/exchangeInfo", params={"symbol": sym}, timeout=8)
+        f = r.json()["symbols"][0]["filters"]
+        return next((float(x["bidMultiplierUp"]) for x in f
+                     if x["filterType"] == "PERCENT_PRICE_BY_SIDE"), 1.2)
+    except Exception:
+        return 1.2
+
+
 def _step_decimals(step) -> int:
     """step(예: 0.1, 0.001)의 소수자릿수. 부동소수점 잔여 제거용 round() 자릿수 계산에 사용."""
     if step <= 0: return 8
@@ -498,6 +513,39 @@ class MarginGuard:
             if code == -1013 and "PERCENT_PRICE" in str(body.get("msg", "")):
                 log.info(f"[{self.engine}] 서버측 숏스탑 보류 {sym} — 손절가가 현재가에서 너무 멂"
                          f"(거래소 가격필터). 가격이 손절선에 접근하면 자동 재시도.")
+                # ★ 2026-08-26: 여기서 그냥 물러나면 **가장 위험한 구간(진입 직후~+17%)에
+                #   서버측 보호가 원천적으로 0**이 된다. PC가 꺼지면 봇 폴링도 없어 무방비다.
+                #   실측(ZRO/FF): 손절선은 진입가×1.4인데 거래소는 현재가×1.2까지만 BUY를 받아
+                #   가격이 +17~20% 오르기 전에는 등록 자체가 불가능하고, 그 사이 221회 거부됐다.
+                #   → 등록 가능한 최대치(현재가×1.2×안전여유)에 **임시 보호 스탑**을 건다.
+                #   원래 손절선보다 타이트하므로 손실을 키우지 않는다(더 일찍 잘릴 뿐이고,
+                #   그것도 봇이 살아 있으면 폴링이 먼저 +40%를 잡는다). 가격이 올라 원래
+                #   손절선 등록이 가능해지면 호출부가 이 임시 주문을 갈아끼운다.
+                try:
+                    cur = _price(sym)
+                    up = _bid_multiplier_up(sym)
+                    prov = cur * up * 0.98          # 필터 경계에서 2% 안쪽
+                    if tick > 0:
+                        prov = _round_step(prov, tick)
+                    if prov > cur and qty * prov >= minn:
+                        for eff2 in ("AUTO_BORROW_REPAY", "AUTO_REPAY"):
+                            r2 = _signed("POST", "/sapi/v1/margin/order",
+                                         {"symbol": sym, "side": "BUY", "type": "STOP_LOSS",
+                                          "quantity": qty, "stopPrice": f"{prov:.8g}",
+                                          "sideEffectType": eff2, "isIsolated": "FALSE"})
+                            b2 = r2.json()
+                            if r2.status_code == 200:
+                                log.warning(f"[{self.engine}] ★{sym} 임시 보호스탑 등록 @{prov:.6g} "
+                                            f"(원래 손절선 {stop_price:.6g}은 거래소 필터로 아직 불가) "
+                                            f"orderId={b2.get('orderId')}")
+                                return {"live": True, "verified": True, "provisional": True,
+                                        "order_id": b2.get("orderId"), "stop_price": prov,
+                                        "target_stop_price": stop_price, "effect": eff2}
+                            if b2.get("code") not in (-1102, -1104, -1106, -1116, -1121, -1130):
+                                break
+                        log.warning(f"[{self.engine}] {sym} 임시 보호스탑도 실패 — 무보호 상태")
+                except Exception as e:
+                    log.warning(f"[{self.engine}] {sym} 임시 보호스탑 예외: {e}")
                 return {"deferred": True, "reason": "PERCENT_PRICE_BY_SIDE"}
             log.warning(f"[{self.engine}] 서버측 숏스탑 등록 실패 {sym}({eff}) → {body}")
             # 파라미터 미지원 계열만 폴백. 잔고/필터 오류면 폴백해도 같은 결과라 중단.

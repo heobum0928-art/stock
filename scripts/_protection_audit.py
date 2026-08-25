@@ -22,6 +22,11 @@ LONG_POS = ROOT / "data" / "margin_manual_long_pos.json"
 # 붙어있지만 armed_engines에 등록된 실거래 봇이다 — 그런데 이 감사의 대상 파일 목록에
 # 아예 없어서, 그 봇이 연 실전 마진숏은 무보호여도 아무도 몰랐다(THETAUSDT 실사례).
 RSI_SHORT_POS = ROOT / "data" / "rsi_short_pos.json"
+# ★ 2026-08-26(점검 발견): 완화판 봇(margin_short_wide_trader, 2026-08-25 신설)이 대상에서
+# 빠져 있었다 — 08-19 rsi_short 누락과 **정확히 같은 재발**이다. 실거래 4건이 전부 이 파일에
+# 있는데 이 감사는 "정상 — 모든 실전 포지션 서버측 보호 확인됨"을 출력하고 있었다.
+# 새 봇을 만들 때 이 목록에 추가하는 것을 절차로 삼아야 한다.
+WIDE_SHORT_POS = ROOT / "data" / "margin_short_wide_pos.json"
 
 
 def check_futures_order(sym: str, order_id) -> str:
@@ -64,7 +69,8 @@ def main():
     # ★ 2026-08-19: venue != "futures"면 continue라 마진 경로가 통째로 감사에서 빠져있었음.
     # 마진숏은 애초에 서버측 스탑을 거는 코드 자체가 없으므로(margin_guard에 숏용
     # place_protective_stop 미구현) 조회조차 못 하지만, "무보호"라는 사실 자체는 알려야 한다.
-    for label, path in (("마진숏", MSHORT_POS), ("RSI극단숏", RSI_SHORT_POS)):
+    for label, path in (("마진숏", MSHORT_POS), ("RSI극단숏", RSI_SHORT_POS),
+                        ("마진숏(완화)", WIDE_SHORT_POS)):
         if not path.exists():
             continue
         positions = json.loads(path.read_text(encoding="utf-8"))

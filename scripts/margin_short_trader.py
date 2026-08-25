@@ -43,6 +43,7 @@ sys.path.insert(0, str(ROOT))
 import requests
 from bithumb import notify
 from bithumb.margin_guard import (MarginGuard, live_status, get_margin_usdt, load_config,
+                                  get_margin_level,
                                   get_borrowed, get_held)
 from bithumb.binance_guard import (BinanceGuard, load_config as load_futures_config, get_futures_usdt,
                                    get_futures_position, _signed as _fut_signed)
@@ -138,6 +139,10 @@ MARGIN_PER_TRADE = 50.0  # 증거금(상한과 동일). 실제 사용은 min(잔
 #   증액 자체가 "좋은 결과 보고 사이즈 키우기" 패턴 — 51건 freeze 취지와 다소 배치되는
 #   점은 기록해둠(would_change_log.md 참고).
 FUT_MARGIN_PER_TRADE = 30.0
+
+# ★ 2026-08-26: 마진 담보비율 경보 단계. 1.3 강제청산 / 1.5 신규진입 차단(margin_guard._gate).
+ML_ALERT_LEVELS = [2.0, 1.7, 1.5, 1.4]
+_ml_alerted: set = set()
 
 BUF_PATH = ROOT / "data" / "margin_short_buf.json"
 POS_PATH = ROOT / "data" / "margin_short_pos.json"
@@ -600,9 +605,13 @@ def main():
                 #   +53.73%에서 청산 = 증거금 기준 -107.65%. 보유가 빠를수록 초과분이 커진다.
                 #   이미 열려 있던 무보호 포지션에도 소급 등록한다.
                 #   ★ 이 주문은 아래 폴링 손절을 대체하지 않고 보강한다. 실패해도 폴링은 그대로 작동.
+                # ★ 2026-08-26: 임시 보호스탑(provisional)이 걸려 있으면, 가격이 올라 원래
+                #   손절선 등록이 가능해졌을 때 갈아끼워야 하므로 stop_order_id가 있어도 재시도한다.
+                #   (임시는 원래 손절선보다 타이트해서 더 일찍 잘린다 — 보호는 되지만 최종형은 아니다)
+                _need_stop = (not pos.get("stop_order_id")) or pos.get("stop_provisional")
                 if (SERVER_STOP_MARGIN
                         and pos.get("venue", "margin") == "margin" and pos.get("live")
-                        and not pos.get("stop_order_id") and not pos.get("stop_giveup")
+                        and _need_stop and not pos.get("stop_giveup")
                         and px < pos["entry_price"] * (1 + STOP_PCT/100)):
                     try:
                         sres = guard.place_protective_stop_short(
@@ -614,10 +623,20 @@ def main():
                         # 실패가 아니므로 카운트하지 않고 조용히 다음 사이클에 재시도한다.
                         pass
                     elif sres.get("live") and sres.get("verified"):
+                        # 임시 스탑을 정식 스탑으로 갈아끼우는 경우 옛 주문을 먼저 취소(중복 방지)
+                        _old = pos.get("stop_order_id")
+                        if _old and _old != sres["order_id"]:
+                            try: guard.cancel_order(pos["coin"], _old)
+                            except Exception as e: log.warning(f"{sym} 옛 스탑 취소 실패({e})")
                         pos["stop_order_id"] = sres["order_id"]
+                        if sres.get("provisional"):
+                            pos["stop_provisional"] = True
+                        else:
+                            pos.pop("stop_provisional", None)
                         pos.pop("stop_fails", None)
                         _save(POS_PATH, positions)
-                        log.warning(f"★{sym} 서버측 숏스탑 소급 등록 orderId={sres['order_id']} @{sres['stop_price']:.6g}")
+                        log.warning(f"★{sym} 서버측 숏스탑 {'임시' if sres.get('provisional') else '정식'} "
+                                    f"등록 orderId={sres['order_id']} @{sres['stop_price']:.6g}")
                         try: notify.send(f"🛡 {sym} 서버측 손절 등록 — 봇 다운 시에도 +{STOP_PCT:.0f}%에서 자동청산")
                         except Exception: pass
                     else:
@@ -751,6 +770,34 @@ def main():
             #   정상 차입)"와 "진짜 API장애"를 구분 못 하고 216회 연속 "IP차단 의심" 오진 알림을 보낸 사건
             #   있었음. 이제 None 자체로 명확히 구분. 신규진입 사이징은 더 이상 이 잔고에 의존하지 않음
             #   (MARGIN_PER_TRADE 고정값 사용, 아래 참조) — 여긴 순수 관측용.
+            # ★ 2026-08-26(점검 발견): 마진레벨(계좌 담보비율)을 감시·경보하는 코드가
+            #   프로젝트 전체에 없었다. get_margin_level()은 _gate() 한 곳에서만 호출돼
+            #   **신규 진입 신호가 있을 때만** 조회됐고, 신호가 없으면 며칠이고 안 봤다.
+            #   실제로 14.11 -> 2.21로 6.4배 악화되는 동안 로그·텔레그램에 흔적이 0건이었다.
+            #   역행경보(ALERT_DD_LEVELS)는 포지션별 가격손실만 본다 — 여러 포지션이 각각
+            #   조금씩만 밀려서 계좌가 강제청산되는 경로에는 경보가 하나도 없었다.
+            #   강제청산 1.3, 신규진입 차단 1.5. 단계별 1회씩만 울린다.
+            try:
+                _ml = get_margin_level()
+                if _ml is not None and _ml > 0:
+                    for _lv in ML_ALERT_LEVELS:
+                        if _ml <= _lv and _lv not in _ml_alerted:
+                            _ml_alerted.add(_lv)
+                            log.error(f"★마진레벨 {_ml:.2f} — 경보선 {_lv} 도달 "
+                                      f"(강제청산 1.3 / 신규진입차단 1.5)")
+                            try:
+                                notify.send("\n".join([
+                                    f"🚨 마진 담보비율 {_ml:.2f} (경보선 {_lv})",
+                                    "1.5 미만이면 신규진입 차단, 1.3이면 거래소 강제청산입니다.",
+                                    "USDT를 넣거나 마진 숏을 줄이면 올라갑니다."]))
+                            except Exception: pass
+                    # 충분히 회복되면 다음에 다시 울리도록 초기화
+                    for _lv in list(_ml_alerted):
+                        if _ml > _lv * 1.15:
+                            _ml_alerted.discard(_lv)
+            except Exception as e:
+                log.warning(f"마진레벨 조회 예외: {e}")
+
             bal = get_margin_usdt()
             if bal is None:
                 api_fail += 1

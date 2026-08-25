@@ -125,10 +125,18 @@ ALERT_ON_RESTART = set()
 # "체크→종료"를 반복하는 구조라 watchdog이 매 사이클(~50초)마다 "죽음 감지→재시작"으로
 # 오인해 콘솔/로그가 스팸으로 도배됨(버그 아님, by design). 이 목록에 있으면 exit=0일 때만
 # 로그레벨을 낮추고 문구도 완화 — 진짜 비정상 종료(exit!=0)는 여전히 WARNING으로 남음.
-ONESHOT_BOTS = {"margin_manual_long_trader"}
+# ★ 2026-08-26(점검 발견): _protection_audit도 "체크→종료" 설계다. 이 스크립트는
+#   2026-08-07에 만들어졌으나 **어디에서도 호출되지 않아 한 번도 실행된 적이 없었다**
+#   (watchdog BOTS·schtasks·프로세스 어디에도 없었고 grep 호출부 0곳).
+#   "15분 주기 무보호 감사"가 문서에만 있고 실제로는 존재하지 않았다 — 실거래 마진숏 2건이
+#   무보호인데 아무도 몰랐던 직접 원인. 등록해서 실제로 돌게 한다.
+ONESHOT_BOTS = {"margin_manual_long_trader", "_protection_audit"}
 
 BOTS = {
     "tg_bot":                ROOT / "scripts" / "tg_bot.py",
+    # ★ 2026-08-26: 실거래 포지션의 서버측 손절이 실제 거래소에 살아있는지 재검증(무보호면 🚨).
+    #   ONESHOT이라 매 사이클(~50초) 돌며 체크하고 종료한다.
+    "_protection_audit":     ROOT / "scripts" / "_protection_audit.py",
     # "claude_intelligence" 제거 (2026-07-09): claude CLI 서브프로세스 호출이 계속 실패
     # (WinError 2, 5분마다 헛돌기만 함) + 사용자 지시로 오토리서치/루프 당분간 중단.
     # "claude_intelligence":   ROOT / "scripts" / "claude_intelligence.py",  # CI Mode

@@ -44,7 +44,7 @@ import requests
 from bithumb import notify
 from bithumb.margin_guard import (MarginGuard, live_status, get_margin_usdt, load_config,
                                   get_margin_level,
-                                  get_borrowed, get_held)
+                                  get_borrowed, get_held, _bid_multiplier_up)
 from bithumb.binance_guard import (BinanceGuard, load_config as load_futures_config, get_futures_usdt,
                                    get_futures_position, _signed as _fut_signed)
 from bithumb.margin_guard import _signed as _mgn_signed
@@ -608,7 +608,19 @@ def main():
                 # ★ 2026-08-26: 임시 보호스탑(provisional)이 걸려 있으면, 가격이 올라 원래
                 #   손절선 등록이 가능해졌을 때 갈아끼워야 하므로 stop_order_id가 있어도 재시도한다.
                 #   (임시는 원래 손절선보다 타이트해서 더 일찍 잘린다 — 보호는 되지만 최종형은 아니다)
-                _need_stop = (not pos.get("stop_order_id")) or pos.get("stop_provisional")
+                # ★ 2026-08-26 수정: 임시 스탑이 걸려 있으면 매 사이클 재시도하게 했더니
+                #   정식 등록이 여전히 불가능한 동안 **30초마다 취소→재등록**을 반복했다
+                #   (실측 504회). 취소와 등록 사이에 잠깐 무보호 구간이 생기고 API도 낭비된다.
+                #   → 임시가 걸린 경우엔 **정식 손절선이 거래소 가격필터를 통과할 만큼
+                #   가격이 올라왔을 때만** 갈아끼운다. 그 전에는 임시를 그대로 둔다.
+                _need_stop = not pos.get("stop_order_id")
+                if pos.get("stop_provisional"):
+                    try:
+                        _up = _bid_multiplier_up(f'{pos["coin"]}USDT')
+                        # 정식 손절선(진입가×1.4)이 현재가×배수 이내로 들어왔는가
+                        _need_stop = (pos["entry_price"] * (1 + STOP_PCT/100)) <= px * _up
+                    except Exception:
+                        _need_stop = False
                 if (SERVER_STOP_MARGIN
                         and pos.get("venue", "margin") == "margin" and pos.get("live")
                         and _need_stop and not pos.get("stop_giveup")

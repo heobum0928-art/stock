@@ -201,6 +201,11 @@ def cmd_pnl() -> str:
 
 
 MARGIN_SHORT_TRADES = Path(__file__).resolve().parent.parent / "data" / "margin_short_trades.csv"
+# ★ 2026-08-26(사용자 발견 "봇에는 안 나와"): 완화판 봇(margin_short_wide_trader, 08-25 신설)
+#   거래가 손익달력에 안 잡히고 있었다. 08-26 확정 5건이 전부 완화봇 것이라 달력이 비어 보였다.
+#   telegram_status.py(포지션현황)는 08-25에 같은 이유로 이미 고쳤는데 달력은 놓쳤다.
+#   **새 봇을 만들 때 이 두 곳(포지션현황·달력)을 함께 갱신하는 것을 절차로 삼는다.**
+MARGIN_SHORT_WIDE_TRADES = Path(__file__).resolve().parent.parent / "data" / "margin_short_wide_trades.csv"
 
 
 def _usdt_krw_rate() -> float:
@@ -213,10 +218,12 @@ def _usdt_krw_rate() -> float:
 
 def cmd_calendar() -> str:
     """★ 2026-08-16: 마진숏 일별 손익을 원화로 텔레그램에서 바로 확인(브라우저 없이)."""
-    if not MARGIN_SHORT_TRADES.exists():
-        return "<b>[손익달력]</b>\n데이터 없음"
-    with open(MARGIN_SHORT_TRADES, encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+    rows = []
+    for _p in (MARGIN_SHORT_TRADES, MARGIN_SHORT_WIDE_TRADES):
+        if not _p.exists():
+            continue
+        with open(_p, encoding="utf-8") as f:
+            rows.extend(list(csv.DictReader(f)))
     if not rows:
         return "<b>[손익달력]</b>\n데이터 없음"
 

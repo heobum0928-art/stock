@@ -71,6 +71,7 @@ HANG_CHECK_OVERRIDE_SEC = {
     #   사용자 확인 후 적용("바꿔", 2026-08-25).
     "margin_short_trader": 21600,
     "margin_short_wide_trader": 21600,   # ★ 2026-08-25: 원본과 동일 구조·동일 폴링이라 같은 값
+    "quietpump_long_paper": 21600,       # ★ 2026-08-26: 순수 모의·I/O바운드, 다른 모의봇과 동일
     "accum_trader": 5400,
     # ★ 2026-08-17: 위 세 봇과는 원인이 다른 오탐 — 이 둘은 폴링주기 자체는 60초로 짧은데,
     # 사이클당 실연산(requests.get 응답대기+간단한 float비교+JSON저장)이 너무 가벼워서 CPU
@@ -167,6 +168,10 @@ BOTS = {
     #   상태였다 — 크래시·행·재부팅 시 재시작이 안 돼 만기청산·트레일링·외부청산감지·역행경보가
     #   전부 멈춘다(서버측 STOP_MARKET만 남음). 2026-08-22 core_lev 누락 사고와 같은 구조라 등록.
     "margin_short_wide_trader": ROOT / "scripts" / "margin_short_wide_trader.py",  # ★진입완화판 마진숏 실전 (2026-08-25 신설)
+    # ★ 2026-08-26: 조용한급등 롱 모의봇(순수 모의, 매매 API 미호출).
+    #   PREREG_SWEEP_BINANCE 봉인을 통과한 첫 후보를 60건까지 검증하는 중이라
+    #   중간에 죽으면 표본 수집이 끊긴다(사전등록 마감 2026-10-26).
+    "quietpump_long_paper":  ROOT / "scripts" / "quietpump_long_paper.py",  # ★조용한급등 롱 모의 (2026-08-26 신설)
     # "margin_manual_long_trader" 제거 (2026-08-20, 기록감사 재확인): 08-15에 이미 발견된 대로
     # __main__ 블록이 없어 watchdog이 등록해도 프로세스가 실제로 뜬 적이 없음(실측 확인 —
     # 커맨드라인에 이 파일이 걸린 프로세스 0개). 30~60초마다 "재기동"만 반복하는 완전한 placebo.

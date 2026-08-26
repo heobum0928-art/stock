@@ -113,6 +113,34 @@ ALERT_DD_STATS = {   # 증거금 손실% : (그 지점 밟은 건수, 플러스�
 }
 URGENT_POLL_SEC = 20      # 위험구간 진입 시 폴링 간격(평시 POLL_SEC=60)
 
+# ★ 2026-08-26: -20% 도달 **1시간 뒤** 판정 알림.
+#   근거: docs/PREREG_DD_SPEED.md — 3개 특징 중 "-20% 후 1시간 추가역행"만 5개 기준을
+#   전부 통과했다(탐색 차이 -30.07%p, 부트 95%CI [-36.27,-23.99], 봉인 -33.23% 부호 동일,
+#   5분위 완벽 단조 -12.0/-12.9/-16.5/-20.8/-52.6). 속도·가속도는 둘 다 기각.
+#   경계는 그 5분위의 최하위/최상위 컷(20%/80% 분위)을 그대로 쓴다.
+#
+#   ⚠️ **행동 권유는 넣지 않는다.** 2026-08-26 (6)에서 실측 확인: 어느 구간에서도
+#   "1시간 시점에 자르기"가 "그냥 두기"보다 나쁘다(+0~5%p 구간 -22.4 vs -10.7,
+#   +50%p 초과도 -123.5 vs -70.1). 1시간 시점이 대체로 최악 근처라 거기서 자르면
+#   바닥에서 파는 셈이다. **분류력(어디서 죽는지)과 행동지침(그러니 잘라라)은 다른 명제다.**
+#   따라서 사실만 전하고 판단은 사용자에게 맡긴다.
+VERDICT_AFTER_SEC = 3600          # -20% 도달 후 이 시간이 지나면 판정 알림
+VERDICT_LO = 3.2                  # 추가역행 이 이하 = 양호 (20% 분위)
+VERDICT_HI = 31.3                 # 추가역행 이 이상 = 위험 (80% 분위)
+VERDICT_STATS = {                 # 구간 : (n, 플러스로 끝난 비율%, 최종 평균%)
+    "양호": (290, 43, -10.4),
+    "보통": (867, 48, -16.7),
+    "위험": (290, 25, -51.5),
+}
+KRW_PER_USDT = 1380               # 알림 원화 환산(대략치, 표시용)
+
+# ★ 2026-08-26 사용자 요청: 청산 후 그 코인이 어떻게 됐는지 사후 추적해서 알려준다.
+#   "팔고 난 뒤 몇 시간 지난 결과도 알려줘" — 수동청산이 옳았는지 사후 확인용.
+#   순수 관찰이며 매매에 영향 없다.
+FOLLOWUP_AFTER_SEC = 6 * 3600     # 청산 후 이 시간 뒤에 결과 통지
+FOLLOWUP_PATH = ROOT / "data" / "margin_short_wide_followup.json"
+
+
 # ★ 2026-08-24: 마진 숏 서버측 손절(거래소에 STOP_LOSS 주문 사전등록) — 기본 OFF.
 #   배경: 2026-08-07 서버측 스탑 도입 때 선물 숏·마진 롱만 커버되고 마진 숏이 빠져 있었다.
 #   봇 5분 폴링(종가)만으론 봉내 급등을 못 잡아 손절선을 뚫는다(그림자 실측 최대 +13.7%p 초과).
@@ -491,6 +519,71 @@ def external_exit_fill(sym, venue, entry_ts):
         return None, None
 
 
+# ★ 2026-08-26(사용자 요청 "팔고 난 후 몇 시간 지난 결과도 알려줘"):
+#   청산 후 그 코인이 어떻게 됐는지 사후 통지한다. 수동청산이 옳았는지 사후 확인용.
+#   **순수 관찰이며 매매에 전혀 영향이 없다.** 판단을 바꾸라는 게 아니라 결과를 알려줄 뿐이다.
+def followup_register(sym, exit_price, exit_pnl_pct, reason, lev):
+    """청산 시각·가격을 적어두고 FOLLOWUP_AFTER_SEC 뒤에 결과를 통지하도록 예약."""
+    try:
+        d = _load(FOLLOWUP_PATH, {})
+        d[sym + "|" + str(int(time.time()))] = {
+            "symbol": sym, "exit_ts": time.time(), "exit_price": exit_price,
+            "exit_pnl_pct": exit_pnl_pct, "reason": reason, "lev": lev,
+        }
+        _save(FOLLOWUP_PATH, d)
+    except Exception as e:
+        log.warning(f"사후추적 등록 실패 {sym}: {e}")
+
+
+def followup_check(tick):
+    """예약된 건 중 시간이 된 것을 통지하고 목록에서 지운다."""
+    try:
+        d = _load(FOLLOWUP_PATH, {})
+    except Exception:
+        return
+    if not d:
+        return
+    now = time.time()
+    changed = False
+    for k in list(d.keys()):
+        f = d[k]
+        if now - f["exit_ts"] < FOLLOWUP_AFTER_SEC:
+            continue
+        t = tick.get(f["symbol"])
+        if not t:                      # 가격 조회 실패 — 다음 사이클에 다시
+            continue
+        cur = t[0]
+        # 숏 기준: 판 뒤 가격이 더 올랐으면 "잘 판 것", 내렸으면 "일찍 판 것"
+        moved = (cur / f["exit_price"] - 1) * 100
+        would = -moved * f["lev"]      # 그대로 들고 있었다면 추가로 얻었을 손익(증거금 기준 %p)
+        hrs = (now - f["exit_ts"]) / 3600
+        if would < -1:
+            verdict = "잘 파셨습니다"
+            tail = f"계속 들고 있었으면 {would:+.0f}%p 더 손해였습니다."
+        elif would > 1:
+            verdict = "조금 일렀습니다"
+            tail = f"계속 들고 있었으면 {would:+.0f}%p 더 벌었을 겁니다."
+        else:
+            verdict = "비슷합니다"
+            tail = "들고 있었어도 거의 같았습니다."
+        log.info(f"[사후추적] {f['symbol']} {hrs:.0f}시간 뒤 — {verdict} ({would:+.1f}%p)")
+        try:
+            notify.send("\n".join([
+                f"\U0001F4CC {f['symbol']} 판 뒤 {hrs:.0f}시간 지났습니다",
+                "",
+                f"팔았을 때 {f['exit_price']:.6g}  ->  지금 {cur:.6g}",
+                "",
+                f"{verdict}. {tail}",
+                "",
+                "(참고용입니다. 다음 판단에 그대로 쓰지 마세요 -",
+                " 한 건은 우연일 수 있습니다.)"]))
+        except Exception:
+            pass
+        del d[k]; changed = True
+    if changed:
+        _save(FOLLOWUP_PATH, d)
+
+
 def log_shadow(sym, pump_pct, price, blocked_by, open_exposure, cap):
     """★ 2026-08-15: 캡에 막혀 진입 못 한 신호 기록(순수 관찰, 주문 없음).
     51건 도달 시 '놓친 신호가 실제로 어떻게 됐을지'를 사후 검증하기 위한 데이터."""
@@ -593,6 +686,7 @@ def main():
                                          f"pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT) 기록 완료, 슬롯 반환")
                         except Exception: pass
                         strikes[pos["coin"]] = 0
+                        followup_register(sym, xpx, pnl_pct * lev, "외부청산", lev)
                         del positions[sym]
                         _save(POS_PATH, positions)
                         continue
@@ -678,7 +772,11 @@ def main():
                     done = pos.setdefault("dd_alerted", [])
                     for lv in ALERT_DD_LEVELS:
                         if dd >= lv and lv not in done:
-                            done.append(lv); _save(POS_PATH, positions)
+                            done.append(lv)
+                            if lv == min(ALERT_DD_LEVELS):   # 1시간 판정의 기준 시각·값
+                                pos["dd20_ts"] = now
+                                pos["dd20_value"] = dd
+                            _save(POS_PATH, positions)
                             n_, wr_, md_ = ALERT_DD_STATS[lv]
                             stop_px = pos["entry_price"] * (1 + STOP_PCT/100)
                             log.warning(f"{sym} 역행경보 -{lv:.0f}%(증거금) 도달 — 현재 -{dd:.1f}%, "
@@ -691,6 +789,40 @@ def main():
                                     f"과거 이 지점 {n_}건 중 {wr_:.1f}%가 플러스로 끝남 (최종 중앙값 {md_:+.1f}%)",
                                     "※ 봇은 매도하지 않습니다. 판단은 직접 하세요."]))
                             except Exception: pass
+                # ★ 2026-08-26: -20% 도달 1시간 뒤 판정 알림(상세는 VERDICT_* 주석).
+                #   사실만 전하고 행동은 권유하지 않는다.
+                _t20 = pos.get("dd20_ts")
+                if (pos.get("live") and _t20 and not pos.get("verdict_sent")
+                        and now - _t20 >= VERDICT_AFTER_SEC):
+                    pos["verdict_sent"] = True
+                    _dd20 = pos.get("dd20_value", 20.0)
+                    _add = dd - _dd20                     # 1시간 동안 추가로 밀린 %p
+                    _zone = "위험" if _add >= VERDICT_HI else ("양호" if _add <= VERDICT_LO else "보통")
+                    _n, _wr, _avg = VERDICT_STATS[_zone]
+                    _usdt = pos["margin"] * _lev * (cur_pnl_pct/100)
+                    _stop_px = pos["entry_price"] * (1 + STOP_PCT/100)
+                    _icon = "\U0001F6A8" if _zone == "위험" else "\u26a0\ufe0f"
+                    log.warning(f"{sym} 1시간 판정 [{_zone}] 추가역행 {_add:+.1f}%p "
+                                f"(과거 생존율 {_wr}%)")
+                    try:
+                        notify.send("\n".join([
+                            f"{_icon} {sym}  [{_zone}]  증거금 -{dd:.0f}%",
+                            "",
+                            f"지금 팔면  {_usdt:+.1f} USDT  (약 {int(_usdt*KRW_PER_USDT):+,}원)",
+                            "",
+                            f"{pos['entry_price']:.6g} 에 팔았는데 {px:.6g} 로 올랐습니다",
+                            "(숏이라 오르면 손해)",
+                            "",
+                            f"{_stop_px:.6g} 되면 봇이 알아서 정리합니다",
+                            "",
+                            "-------------",
+                            "",
+                            f"1시간 동안 {_add:+.0f}%p 더 밀렸습니다.",
+                            f"이런 경우 10번 중 {round(_wr/10)}번은 살아났습니다.",
+                            "",
+                            "봇은 안 팝니다. 파실지는 직접 정하세요."]))
+                    except Exception: pass
+                    _save(POS_PATH, positions)
                 peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
                 trail_hit = peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
                 if not stop_hit and not trail_hit and now < pos["exit_ts"]:
@@ -756,10 +888,12 @@ def main():
                         except Exception: pass
                 else:
                     strikes[coin_key] = 0
+                followup_register(sym, px, pnl_pct * lev, reason, lev)
                 del positions[sym]
 
             _save(POS_PATH, positions)
             _save(STRIKES_PATH, strikes)
+            followup_check(tick)        # ★ 2026-08-26: 청산 후 사후 통지(순수 관찰)
 
             # ★ 2026-08-09: 신규상장 모의 롱 청산 점검 (dry-run 전용, 실주문 없음)
             for nsym in list(newlisting_positions.keys()):

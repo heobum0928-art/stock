@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>EdgeInspector</RootNamespace>
+    <AssemblyName>EdgeInspector</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <!-- FolderBrowserDialog(라벨링 탭 폴더 선택)만 필요 — UseWindowsForms=true 대신
+         FrameworkReference로 직접 참조해 SDK가 System.Windows.Forms 암시적 using을
+         주입하지 않게 한다(WPF의 System.Windows.* 타입과 이름 충돌 방지:
+         Application/UserControl/Brush/Color/Point/Rectangle/KeyEventArgs 등). -->
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+
+</Project>

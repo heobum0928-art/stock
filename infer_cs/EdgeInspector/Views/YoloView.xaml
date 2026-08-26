@@ -1,0 +1,192 @@
+<UserControl x:Class="EdgeInspector.Views.YoloView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:EdgeInspector.Views">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:InverseBoolToVisConverter x:Key="InvBoolToVis" />
+    </UserControl.Resources>
+    <DockPanel LastChildFill="True" Background="{StaticResource ContentBg}">
+
+        <!-- 툴바 -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource SidebarBg}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,9">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="도메인" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,10,0" />
+                <ComboBox Width="200" VerticalAlignment="Center" Margin="0,0,16,0"
+                          ItemsSource="{Binding Domains}" SelectedItem="{Binding SelectedDomain}" />
+                <Button Style="{StaticResource PrimaryButton}" Click="OpenYoloImage_Click" Margin="0,0,20,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center" Margin="0,0,7,0" />
+                        <TextBlock Text="이미지 열기" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="Score" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,10,0" />
+                <Slider Minimum="0.05" Maximum="0.95" Value="{Binding ScoreThreshold}" Width="150" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ScoreThreshold, StringFormat={}{0:F2}}" VerticalAlignment="Center" Margin="10,0,0,0" Style="{StaticResource Body}" />
+                <CheckBox Content="정답(GT) 비교" IsChecked="{Binding ShowGroundTruth}" VerticalAlignment="Center" Margin="24,0,0,0"
+                          ToolTip="점선 = 사람이 라벨링한 정답. 실선 = 모델 예측. 검증셋(val) 샘플에서만 표시됩니다." />
+                <Button Content="⏱ 속도 측정" Click="Benchmark_Click" Style="{StaticResource SecondaryButton}"
+                        VerticalAlignment="Center" Margin="24,0,0,0"
+                        ToolTip="현재 이미지로 추론을 여러 번 돌려 중앙값 ms와 초당 처리장수(FPS)를 측정합니다." />
+            </StackPanel>
+        </Border>
+
+        <!-- 상태줄 -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource SidebarBg}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,7">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding DetCountText}" Style="{StaticResource Caption}" Foreground="{StaticResource Accent}" />
+                <TextBlock Text="{Binding Status}" Style="{StaticResource Caption}" />
+            </DockPanel>
+        </Border>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="228" />
+                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="240" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ① 프로젝트 사이드바 -->
+            <Border Grid.Column="0" Background="{StaticResource SidebarBg}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+                <StackPanel Margin="16,16,16,0">
+                    <TextBlock Text="{Binding DomainName}" Style="{StaticResource ProjectName}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Ellipse Width="10" Height="10" Fill="{StaticResource Accent}" VerticalAlignment="Center" />
+                        <TextBlock Text="객체 검출" Style="{StaticResource Body}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16" />
+
+                    <TextBlock Text="모델 정보" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <local:RingGauge Fraction="{Binding AccuracyFraction}" CenterLabel="{Binding AccuracyText}" />
+                        <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                            <TextBlock Text="정확도" Style="{StaticResource Caption}" />
+                            <TextBlock Text="(mAP50)" Style="{StaticResource Caption}" Margin="0,-2,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="모델" Style="{StaticResource Caption}" />
+                        <TextBlock Grid.Column="1" Text="{Binding ModelText}" Style="{StaticResource Body}" />
+                    </Grid>
+                    <TextBlock Text="{Binding TrainInfoText}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                    <Button Click="OpenReport_Click" Margin="0,12,0,0"
+                            Style="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Visibility="{Binding HasReport, Converter={StaticResource BoolToVis}}"
+                            ToolTip="혼동행렬·정밀도/재현율 곡선·정답 대비 예측 비교·재학습 이력을 브라우저에서 봅니다.">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="📊" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <TextBlock Text="상세 평가 리포트 보기" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16" />
+
+                    <TextBlock Text="클래스" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
+                    <ItemsControl ItemsSource="{Binding ClassLegend}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                                    <Border Width="14" Height="14" CornerRadius="3" Background="{Binding Color}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Index}" Style="{StaticResource Caption}" Margin="8,0,0,0" VerticalAlignment="Center" MinWidth="14" />
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Body}" Margin="4,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- ② 갤러리 -->
+            <DockPanel Grid.Column="1" Background="{StaticResource SidebarBg}">
+                <TextBlock DockPanel.Dock="Top" Text="샘플 갤러리" Style="{StaticResource SectionLabel}" Margin="12,14,0,8" />
+                <ListBox ItemsSource="{Binding Thumbnails}" SelectedItem="{Binding SelectedThumb}"
+                         Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.CanContentScroll="False">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Width" Value="72" />
+                            <Setter Property="Margin" Value="3,3" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="b" Background="{StaticResource CardBg}" CornerRadius="5"
+                                                BorderBrush="Transparent" BorderThickness="2" Padding="3">
+                                            <Image Source="{Binding Image}" Stretch="Uniform" Height="54" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </DockPanel>
+
+            <!-- ③ 뷰어 (휠=줌, 드래그=팬, 더블/우클릭=리셋) -->
+            <Border Grid.Column="2" Background="#FF1E1E1E" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,1,0" ClipToBounds="True">
+                <Grid>
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding HasImage, Converter={StaticResource InvBoolToVis}}">
+                        <TextBlock Text="◱" FontSize="46" Foreground="{StaticResource BorderBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="왼쪽 갤러리에서 샘플을 고르거나 '이미지 열기'" Style="{StaticResource Caption}" Margin="0,10,0,0" />
+                    </StackPanel>
+                    <Grid Margin="16" Background="Transparent" local:ZoomPan.Enabled="True">
+                        <Image Source="{Binding Image}" Stretch="Uniform" />
+                        <Image Source="{Binding Overlay}" Stretch="Uniform" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- ④ 검출 패널 -->
+            <DockPanel Grid.Column="3" Background="{StaticResource SidebarBg}">
+                <TextBlock DockPanel.Dock="Top" Text="검출 결과" Style="{StaticResource SectionLabel}" Margin="14,14,0,4" />
+                <TextBlock DockPanel.Dock="Top" Text="{Binding DetCountText}" Style="{StaticResource Body}"
+                           Foreground="{StaticResource Accent}" FontWeight="SemiBold" Margin="14,0,0,8" />
+                <TextBlock DockPanel.Dock="Top" Text="검출 없음 — Score를 낮춰보세요." Style="{StaticResource Caption}"
+                           TextWrapping="Wrap" Margin="14,0,14,8" Visibility="{Binding NoDetections, Converter={StaticResource BoolToVis}}" />
+                <ListBox ItemsSource="{Binding Detections}" Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{StaticResource CardBg}" CornerRadius="5" Margin="8,3" Padding="10,8">
+                                            <DockPanel>
+                                                <Border DockPanel.Dock="Left" Width="10" Height="10" CornerRadius="2"
+                                                        Background="{Binding Color}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding ScoreText}" Foreground="{StaticResource TextPrimary}"
+                                                           FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding ClassName}" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</UserControl>

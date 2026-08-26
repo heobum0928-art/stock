@@ -1,0 +1,21 @@
+{
+  "_note": "2026-07-17 manualshort 일시정지 — 재량숏 6건(SNX/UNI/PARTI/DEXE/ONDO/ZEC) 합계 -14.60USDT, 승률1/6, 손절 5건이 전부 손절폭(-3~4%)에 근접 적중. RSI저점반등 필터 도입 후(ZEC)에도 동일 패턴 반복 — 엣지 미검증 상태로 판단, 재검증 전까지 정지. margin_short(검증완료)·rsishort(제한적 검증)·manuallong(아직 손실 트랙 없음)은 유지. 2026-07-21: ETH 재량롱 불타기(200USDT 추가) 위해 manuallong 캡 200→240 증액, 정지 중인 manualshort 캡에서 150→110으로 재배분(계정 전체 리스크한도 안 늘림, global_cap 480 그대로). 2026-07-23: LTC 재량롱 추가매수(200USDT, ETH 92% 집중도 해소 목적 — LTC가 그동안 상대적으로 작았음)를 위해 manuallong 캡 240→440 증액. 이번엔 재배분이 아니라 사용자가 실제 신규자금 투입을 명시적으로 확인해서 global_cap도 480→680으로 같이 증액(계정 전체 리스크한도 실질 상승, 07-21과 다름 — 그때는 재배분이라 안 늘렸음). 2026-08-19 rsishort disarm — scripts/rsi_extreme_short_paper.py는 파일명에 paper가 붙어있지만 armed_engines에 있어 실거래 중이었고, 손절규칙이 아예 없어(8h 시간만기만) 울트라감사에서 지적됨. THETAUSDT 마지막 포지션이 8h만기로 정상청산(pnl -0.07%)된 직후 disarm — 열린 포지션 없는 상태에서 안전하게 처리(disarm 상태에서 close_short 호출시 dry:True만 반환돼 청산 자체가 안 되므로, 포지션 열려있을 때 disarm하면 안 됨을 확인함). 44건 표본은 data/rsi_short_trades.csv에 남아있고 판정 계획은 미정 — 재무장 여부는 별도 논의 후 결정. 2026-08-20(기록감사 발견, 즉시 원복) — margin_manual_long_trader.py의 _shift_cap_to_mshort()가 ETH청산(08-14,+220)·LTC청산(08-20,+220)으로 mshort 캡을 100→540까지 자동 상향시켰음. 원래 취지(재량롱 청산시 담보 회수)는 맞으나, 같은 날 LTC 상환으로 담보비율(marginLevel)이 1.42→40.2로 열려 유일한 브레이크였던 담보비율 차단까지 동시에 풀림 — 결과적으로 서버측 손절이 없는 마진숏 경로가 계획(선물 150)의 3.6배 규모(540, 동시 최대 10건)로, 한 번도 검증 안 된 채 열린 상태가 됨. mshort를 원래 값(100)으로 되돌림. manuallong은 0 유지(현재 보유 포지션 없음, 재량매매 재개 시 별도 논의). global_cap(680)은 안 건드림 — 개별캡 합계(240)가 이미 한참 아래라 병목이 아니고, 실제 입금 이력을 반영한 값이라 축소할 근거가 없음. _shift_cap_to_mshort() 함수 자체는 코드 수정 안 함(로직 재검토는 별도 논의) — 이번엔 값만 원복.",
+  "enabled": true,
+  "armed_engines": [
+    "mshort",
+    "manuallong"
+  ],
+  "engine_caps_usdt": {
+    "mshort": 100.0,
+    "rsishort": 30,
+    "manualshort": 110,
+    "manuallong": 0.0
+  },
+  "global_cap_usdt": 680,
+  "daily_loss_limit_usdt": 45,
+  "leverage": 2,
+  "test_mode": false
+  
+  "armed_engines": ["mshort", "manuallong", "mshort_wide"],
+  "engine_caps_usdt": {..., "mshort_wide": 100}
+}

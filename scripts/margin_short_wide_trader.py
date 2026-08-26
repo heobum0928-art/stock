@@ -196,7 +196,12 @@ TRADES_PATH = ROOT / "data" / "margin_short_wide_trades.csv"
 SHADOW_PATH = ROOT / "data" / "margin_short_wide_shadow.csv"
 SHADOW_DEDUP_H = 6
 _shadow_seen: dict[str, float] = {}
-STRIKES_PATH = ROOT / "data" / "margin_short_wide_coin_strikes.json"  # 코인별 연속 스탑 카운트
+# ★ 2026-08-27: 원본봇·완화봇이 손절 카운터와 블랙리스트를 **공유**한다.
+#   계기 — ONGUSDT가 08-26 22:09(완화, -24.38) / 08-27 05:05(원본, -24.06) 6시간 간격으로
+#   연속 2회 -40% 손절. 합쳐 -48.4 USDT. 그런데 카운터가 봇별로 따로라 각 1회씩이었고
+#   2연속 블랙리스트가 발동하지 않았다. 봇을 둘로 나누면서 안전장치가 무력화된 것.
+STRIKES_PATH = ROOT / "data" / "shared_coin_strikes.json"          # 코인별 연속 스탑 카운트(공유)
+SHARED_BLACKLIST_PATH = ROOT / "data" / "shared_coin_blacklist.json"  # {심볼: 해제시각} (공유)
 COOLDOWN_PATH = ROOT / "data" / "margin_short_wide_cooldown.json"  # ★ 2026-07-22(감사 발견): 재시작 시
 # cooldown이 메모리 전용이라 초기화되던 문제 — positions와 동일하게 디스크 영속화.
 
@@ -685,7 +690,8 @@ def main():
                         try: notify.send(f"[완화] 🔎 {venue_tag}숏 외부청산 감지 {sym} — 봇이 아닌 경로로 청산됨. "
                                          f"pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT) 기록 완료, 슬롯 반환")
                         except Exception: pass
-                        strikes[pos["coin"]] = 0
+                        _st = _load(STRIKES_PATH, {}); _st[pos["coin"]] = 0
+                        _save(STRIKES_PATH, _st)   # 공유 카운터 — 매번 다시 읽고 쓴다
                         followup_register(sym, xpx, pnl_pct * lev, "외부청산", lev)
                         del positions[sym]
                         _save(POS_PATH, positions)
@@ -880,19 +886,29 @@ def main():
                 # ★ 2026-08-09: 코인별 연속 스탑 카운트 — 2연속이면 7일 블랙리스트(TUTUSDT 2연패 계기)
                 coin_key = pos["coin"]
                 if stop_hit:
+                    # 공유 카운터: 갱신 직전에 다시 읽어 상대 봇의 증가분을 반영한다.
+                    strikes = _load(STRIKES_PATH, {})
                     strikes[coin_key] = strikes.get(coin_key, 0) + 1
+                    _save(STRIKES_PATH, strikes)
                     if strikes[coin_key] >= 2:
-                        cooldown[sym] = now + STRIKE_BLACKLIST_H * 3600
+                        _until = now + STRIKE_BLACKLIST_H * 3600
+                        cooldown[sym] = _until
+                        _bl = _load(SHARED_BLACKLIST_PATH, {})
+                        _bl[sym] = max(float(_bl.get(sym, 0)), _until)
+                        _save(SHARED_BLACKLIST_PATH, _bl)   # 상대 봇도 이 파일을 보고 막힌다
                         log.warning(f"★{coin_key} 연속 {strikes[coin_key]}회 스탑 → 7일 블랙리스트")
                         try: notify.send(f"[완화] ⛔ {coin_key} 연속 {strikes[coin_key]}회 손절 — 7일간 신규진입 제외")
                         except Exception: pass
                 else:
+                    strikes = _load(STRIKES_PATH, {})
                     strikes[coin_key] = 0
+                    _save(STRIKES_PATH, strikes)
                 followup_register(sym, px, pnl_pct * lev, reason, lev)
                 del positions[sym]
 
             _save(POS_PATH, positions)
-            _save(STRIKES_PATH, strikes)
+            # (STRIKES_PATH는 변경 시점마다 즉시 read-modify-write —
+            #  여기서 통째로 덮어쓰면 상대 봇의 갱신분이 날아간다)
             followup_check(tick)        # ★ 2026-08-26: 청산 후 사후 통지(순수 관찰)
 
             # ★ 2026-08-09: 신규상장 모의 롱 청산 점검 (dry-run 전용, 실주문 없음)
@@ -1017,6 +1033,12 @@ def main():
             if regime_blocked and now - last_regime_alert_ts > 1800:
                 log.info(f"변동장 감지(BTC 24h변동 {btc_vol:.2f}%>{BTC_VOL_THRESHOLD}%) — 신규진입 전면 보류")
                 last_regime_alert_ts = now
+            # ★ 2026-08-27: 상대 봇이 건 공유 블랙리스트를 이번 사이클 쿨다운에 반영
+            for _s, _u in _load(SHARED_BLACKLIST_PATH, {}).items():
+                try: _u = float(_u)
+                except Exception: continue
+                if _u > now and cooldown.get(_s, 0) < _u:
+                    cooldown[_s] = _u
             for coin in (UNIVERSE_SET | FUTURES_UNIVERSE):
                 if regime_blocked:
                     break

@@ -51,3 +51,4 @@ signal_id,time,symbol,pump_pct,price,qvol_24h,chg_24h,funding_rate,funding_inter
 0827003208-BICOUSDT,2026-08-27T00:32:08.278526+09:00,BICOUSDT,31.3,0.02697,58567316,36.0,-0.00131532,8.0,V0_base|V1_notrail|V2_hold24|V3_fund8h|V5_stop30,V4_posfund:funding_non_negative
 0827025102-BTRUSDT,2026-08-27T02:51:02.968150+09:00,BTRUSDT,34.58,0.13566,931125815,301.01,0.00099795,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
 0827025414-EDENUSDT,2026-08-27T02:54:14.865376+09:00,EDENUSDT,30.59,0.07193,70108320,48.7,-0.00116167,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0827103605-ARIAUSDT,2026-08-27T10:36:05.787298+09:00,ARIAUSDT,31.19,0.04677,25287375,61.87,0.0003198,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only

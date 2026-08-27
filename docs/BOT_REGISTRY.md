@@ -82,6 +82,7 @@ python -c "import json,glob;[print(f, json.load(open(f,encoding='utf-8')).get('a
 | `futures_logger.py` | `futures_signals.csv` (60MB) | 펀딩비·OI — **공식 히스토리 API로 대체 가능한지 확인 필요** |
 | `upbit_notice_monitor.py` | `upbit_notice_events.csv` | 상장공지 감지지연 |
 | `binance_notice_monitor.py` | `binance_notice_events.csv` | 상장공지 감지지연 |
+| `coinpan_monitor.py` | `coinpan_posts.csv` | **커뮤니티 심리** — 손익인증 글 폭증이 꼭지인가, 종목 언급 급증이 선행하는가. ★2026-08-27 신설. **매매·알림 일절 없음.** 검정은 사전등록(`docs/PREREG_*.md`) 후에만 한다 |
 
 ## 🔵 판단 보류
 

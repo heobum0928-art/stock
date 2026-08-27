@@ -80,18 +80,6 @@ COOLDOWN_H   = 12   # 실거래와 동일 — 같은 코인 재신호 억제(중
 
 NOTIONAL_USDT = 60.0   # 실거래와 동일(증거금30 × 레버2). 순수 명목, 실제 자금 아님
 MARGIN_USDT   = 30.0   # 증거금 대비 % 계산용
-# ★ 2026-08-27(6개 AI 자문 중 MinMax 지적, 실측 확인): 강제청산 시뮬레이션이 없었다.
-#   레버리지 2배·유지증거금률 5%면 역행 (1-2*0.05)/(2*(1+0.05)) = 42.857%에서 강제청산된다.
-#   스탑 -40%보다 뒤에 있어 평상시엔 스탑이 먼저 걸리지만, 갭으로 뛰어넘으면 청산이 먼저다.
-#   실측: 최대역행이 42.86%를 넘은 기록 20건, 증거금 대비 -100%를 초과한 기록 8건
-#   (TRUMPUSDT -107.7%, ONGUSDT -101.0%). 고립증거금에서 나올 수 없는 값이다.
-#   CLAUDE.md 4항 "청산 시뮬레이션 없으면 그 숫자는 쓰지 않는다" 위반이었다.
-#   ※ 이 수정 이전 기록(2026-08-19~08-27)은 분석 시 -100% 상한을 적용해야 한다.
-#      다만 해당 20건은 전부 이미 큰 손실이고 "수익"으로 기록된 건은 0건이라,
-#      보정해도 V1 vs V0 짝차이는 완전히 동일하다(양쪽에 같은 값으로 들어가 동점).
-LEVERAGE      = 2.0
-MMR           = 0.05
-LIQ_ADVERSE_PCT = (1 - LEVERAGE * MMR) / (LEVERAGE * (1 + MMR)) * 100   # 42.857
 TAKER_FEE     = 0.0005 # 왕복 계산 시 ×2
 
 POLL_SEC = 180
@@ -286,12 +274,7 @@ def main():
                     hold_h = (now - p["entry_ts"]) / 3600
 
                     reason = None
-                    liquidated = False
-                    # 강제청산이 스탑보다 앞선다 — 갭으로 청산선을 넘어버린 경우.
-                    if px >= entry * (1 + LIQ_ADVERSE_PCT / 100):
-                        reason = "강제청산"
-                        liquidated = True
-                    elif px >= entry * (1 + cfg["stop"] / 100):
+                    if px >= entry * (1 + cfg["stop"] / 100):
                         reason = f"스탑-{cfg['stop']:.0f}%"
                     elif cfg["trail"]:
                         trig, give = cfg["trail"]
@@ -306,12 +289,6 @@ def main():
                     comm = -NOTIONAL_USDT * TAKER_FEE * 2
                     price_pnl_usdt = NOTIONAL_USDT * cur_pnl / 100
                     net = price_pnl_usdt + fund + comm
-                    # 고립증거금은 증거금 이상을 잃을 수 없다. 그 전에 거래소가 청산한다.
-                    if liquidated or net < -MARGIN_USDT:
-                        net = -MARGIN_USDT
-                        liquidated = True
-                        if "강제청산" not in reason:
-                            reason = f"강제청산({reason})"
 
                     del positions[vname][sym]
                     _save(POS_PATH, positions)

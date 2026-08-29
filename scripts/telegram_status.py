@@ -144,14 +144,21 @@ def build_text():
         text = "[포지션현황] 보유 포지션 없음"
         return text + (shadow or "")
 
+    # ★ 2026-08-29(사용자 발견 "합계가 안 맞는데"): 합계 산수는 맞았으나 **수익률과 순익의
+    #   잣대가 달라** 안 맞아 보였다. 수익률은 명목가 기준인데 순익은 margin×2×수익률이라
+    #   (레버리지 2배) 증거금 대비로는 두 배로 보인다 — 증거금 30에 +19.6%인데 순익 +11.74.
+    #   CLAUDE.md 2항("숫자를 인용할 때 반드시 잣대를 같이 적는다")을 이 화면이 안 지키고
+    #   있었다. 명목·증거금 둘 다 표시해 오독을 원천 차단한다.
     lines = ["[포지션현황]", "<pre>"]
-    lines.append(f"{'종목':<7}{'방향':<4}{'수익률':>8}{'순익':>9}  {'만기'}")
+    lines.append(f"{'종목':<7}{'방향':<4}{'명목':>7}{'증거금':>8}{'순익':>9}  {'만기'}")
     total = 0.0
     for coin, direction, pct, usdt, remain in rows:
-        lines.append(f"{coin:<7}{direction:<4}{pct:>+7.1f}%{usdt:>+9.2f}  {remain}")
+        lines.append(f"{coin:<7}{direction:<4}{pct:>+6.1f}%{pct*2:>+7.1f}%{usdt:>+9.2f}  {remain}")
         total += usdt
-    lines.append(f"{'합계':<15}{total:>+9.2f}")
+    lines.append(f"{'합계':<24}{total:>+9.2f}")
     lines.append("</pre>")
+    lines.append("명목=가격 변동률 / 증거금=레버리지 2배 반영(순익은 이 기준)")
+    lines.append("※ BTC 롱(core_lev)은 별도 엔진이라 이 표에 없습니다")
     return "\n".join(lines) + (shadow or "")
 
 

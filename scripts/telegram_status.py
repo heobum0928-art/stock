@@ -87,7 +87,10 @@ def _shadow_summary():
     lines = ["", f"[그림자함대] 신호누적 {n_sig}건 (전종목 숏)"]
     if by_sym:
         lines.append("<pre>")
-        lines.append(f"{'종목':<8}{'수익률':>8}{'경과':>7}")
+        # ★ 2026-08-29: 잣대 명시(CLAUDE.md 2항). 이 값은 **명목가 기준**인데 바로 위
+        #   실거래 표는 명목·증거금을 함께 보여주므로, 라벨이 없으면 같은 기준으로 오독된다.
+        #   증거금 기준은 이 값의 2배다(레버리지 2배).
+        lines.append(f"{'종목':<8}{'명목':>8}{'경과':>7}")
         for sym, d in sorted(by_sym.items()):
             try:
                 cur = _futures_price(sym)
@@ -100,6 +103,7 @@ def _shadow_summary():
             if excluded:
                 lines.append(f" ㄴ제외:{','.join(excluded)}")
         lines.append("</pre>")
+        lines.append("명목 기준(증거금 기준은 2배) · 모의라 펀딩비 미반영")
     else:
         lines.append("오픈 포지션 없음")
 

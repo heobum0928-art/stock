@@ -284,6 +284,11 @@ def cmd_calendar() -> str:
     lines.append(f"{'합계':<6}{total_krw:>+11,.0f}원")
     lines.append("</pre>")
     lines.append(f"합계 {total_usdt:+.2f} USDT (환율 1USDT={rate:,.0f}원)")
+    # ★ 2026-08-29: 잣대·범위를 명시(CLAUDE.md 2항). 이 표는 % 없이 절대금액만 쓰므로
+    #   명목/증거금 혼동은 없지만, **어느 봇의 손익인지**가 빠져 있었다 — 거래소 전체
+    #   손익과 안 맞는 이유가 BTC 롱 제외 때문인데 화면에 그 설명이 없었다(사용자가
+    #   포지션현황에서 같은 이유로 두 번 혼동함).
+    lines.append("범위: 마진숏 2봇(원본+완화) 청산분 · <b>BTC 롱(core_lev) 제외</b>")
     if src == "net":
         lines.append(f"└ 이 중 펀딩비 {tot_fund:+.2f} USDT")
         lines.append("※ 마진(spot) 건은 대출이자 미반영 — 그만큼 낙관적입니다")

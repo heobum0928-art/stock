@@ -206,6 +206,18 @@ MARGIN_SHORT_TRADES = Path(__file__).resolve().parent.parent / "data" / "margin_
 #   telegram_status.py(포지션현황)는 08-25에 같은 이유로 이미 고쳤는데 달력은 놓쳤다.
 #   **새 봇을 만들 때 이 두 곳(포지션현황·달력)을 함께 갱신하는 것을 절차로 삼는다.**
 MARGIN_SHORT_WIDE_TRADES = Path(__file__).resolve().parent.parent / "data" / "margin_short_wide_trades.csv"
+# ★ 2026-08-29(사용자 발견 "달력 합계가 이상한데"): 위 두 CSV의 pnl_usdt에는
+#   **펀딩비·수수료가 없다**(CLAUDE.md 2항의 알려진 결함). 7/24~8/29 기준 달력은 -11.26을
+#   보여줬으나 거래소 원장 실제는 -43.50 — 펀딩비 671건 -45.11이 통째로 빠져 있었다.
+#   → 달력은 ledger_reconcile.py가 만든 원장대조 결과를 **우선** 쓴다. 없거나 낡으면
+#   CSV로 폴백하되 그 사실을 화면에 명시한다(조용히 낙관적인 숫자를 보여주지 않는다).
+#   ★ 2026-08-29 2차: 원장은 **봇별로 분리**돼 있다. gate_eval.py가 margin_short_ledger.csv를
+#   src 필터 없이 읽어 51건 관문 표본에 쓰기 때문(합치면 사전확정 표본 정의가 깨진다).
+#   달력은 두 파일을 합산해서 본다.
+MARGIN_SHORT_LEDGERS = [
+    Path(__file__).resolve().parent.parent / "data" / "margin_short_ledger.csv",
+    Path(__file__).resolve().parent.parent / "data" / "margin_short_wide_ledger.csv",
+]
 
 
 def _usdt_krw_rate() -> float:
@@ -217,33 +229,68 @@ def _usdt_krw_rate() -> float:
 
 
 def cmd_calendar() -> str:
-    """★ 2026-08-16: 마진숏 일별 손익을 원화로 텔레그램에서 바로 확인(브라우저 없이)."""
-    rows = []
-    for _p in (MARGIN_SHORT_TRADES, MARGIN_SHORT_WIDE_TRADES):
-        if not _p.exists():
-            continue
-        with open(_p, encoding="utf-8") as f:
-            rows.extend(list(csv.DictReader(f)))
+    """★ 2026-08-16: 마진숏 일별 손익을 원화로 텔레그램에서 바로 확인(브라우저 없이).
+    ★ 2026-08-29: 펀딩비·수수료 포함한 **순손익**으로 바꿈(사용자 지시).
+       원장대조(ledger_reconcile.py) 결과를 우선 쓰고, 없으면 CSV로 폴백 + 경고 표시."""
+    rows, src, stale = [], "", ""
+    for _lp in MARGIN_SHORT_LEDGERS:
+        if _lp.exists():
+            with open(_lp, encoding="utf-8") as f:
+                rows += [r for r in csv.DictReader(f) if r.get("exit_time")]
+    if rows:
+        src = "net"
+        # 원장이 낡았는지 확인 — 봇 CSV의 최신 청산보다 뒤처져 있으면 경고
+        try:
+            led_last = max(r["exit_time"] for r in rows)
+            csv_last = ""
+            for _p in (MARGIN_SHORT_TRADES, MARGIN_SHORT_WIDE_TRADES):
+                if _p.exists():
+                    with open(_p, encoding="utf-8") as f:
+                        for r in csv.DictReader(f):
+                            if r.get("exit_time", "") > csv_last:
+                                csv_last = r["exit_time"]
+            if csv_last and csv_last > led_last:
+                stale = f"⚠️ 원장이 {led_last[5:16]}까지만 반영됨(최신 거래 {csv_last[5:16]})"
+        except Exception:
+            pass
+    if not rows:   # 폴백 — 펀딩비 미포함
+        for _p in (MARGIN_SHORT_TRADES, MARGIN_SHORT_WIDE_TRADES):
+            if not _p.exists():
+                continue
+            with open(_p, encoding="utf-8") as f:
+                rows.extend(list(csv.DictReader(f)))
+        src = "gross"
     if not rows:
         return "<b>[손익달력]</b>\n데이터 없음"
 
+    key = "net_pnl_usdt" if src == "net" else "pnl_usdt"
     rate = _usdt_krw_rate()
-    daily = {}
+    daily, tot_fund = {}, 0.0
     for r in rows:
         d = r["exit_time"][:10]
-        entry = daily.setdefault(d, {"usdt": 0.0, "cnt": 0})
-        entry["usdt"] += float(r["pnl_usdt"])
-        entry["cnt"] += 1
+        e = daily.setdefault(d, {"usdt": 0.0, "cnt": 0})
+        e["usdt"] += float(r.get(key) or 0)
+        e["cnt"] += 1
+        tot_fund += float(r.get("funding_usdt") or 0)
 
-    lines = ["<b>[손익달력]</b> margin_short " + f"{len(rows)}건", "<pre>"]
-    total_krw = 0.0
+    title = "순손익(펀딩·수수료 포함)" if src == "net" else "총손익(펀딩·수수료 <b>미포함</b>)"
+    lines = [f"<b>[손익달력]</b> {title} {len(rows)}건", "<pre>"]
+    total_krw = total_usdt = 0.0
     for d in sorted(daily):
+        total_usdt += daily[d]["usdt"]
         krw = daily[d]["usdt"] * rate
         total_krw += krw
         lines.append(f"{d[5:]:<6}{krw:>+11,.0f}  {daily[d]['cnt']}건")
     lines.append(f"{'합계':<6}{total_krw:>+11,.0f}원")
     lines.append("</pre>")
-    lines.append(f"(환율 1USDT={rate:,.0f}원 적용)")
+    lines.append(f"합계 {total_usdt:+.2f} USDT (환율 1USDT={rate:,.0f}원)")
+    if src == "net":
+        lines.append(f"└ 이 중 펀딩비 {tot_fund:+.2f} USDT")
+        lines.append("※ 마진(spot) 건은 대출이자 미반영 — 그만큼 낙관적입니다")
+    else:
+        lines.append("⚠️ 원장대조 파일이 없어 <b>펀딩비·수수료가 빠진</b> 숫자입니다")
+    if stale:
+        lines.append(stale)
     return "\n".join(lines)
 
 

@@ -37,8 +37,14 @@ log = logging.getLogger(__name__)
 from bithumb.binance_guard import _signed
 
 KST = timezone(timedelta(hours=9))
-TRADES_CSV = ROOT / "data" / "margin_short_trades.csv"
-OUT_CSV    = ROOT / "data" / "margin_short_ledger.csv"
+# ★ 2026-08-29: 완화봇(margin_short_wide_trader, 08-25 신설)이 빠져 있었다.
+#   사용자가 "달력 합계가 이상한데"로 발견 — /달력은 두 봇 CSV를 합산하는데
+#   원장대조는 원본 봇만 하고 있어서, 완화봇 거래는 펀딩비가 영영 반영되지 않았다.
+#   BOT_REGISTRY.md "봇 하나 추가 시 갱신할 5곳"에 원장대조가 빠져 있던 것과 같은 사고.
+TRADES_CSVS = [ROOT / "data" / "margin_short_trades.csv",
+               ROOT / "data" / "margin_short_wide_trades.csv"]
+OUT_CSV      = ROOT / "data" / "margin_short_ledger.csv"       # 원본봇 전용(gate_eval 입력)
+OUT_CSV_WIDE = ROOT / "data" / "margin_short_wide_ledger.csv"  # 완화봇 전용
 START_MS   = int(datetime(2026, 7, 20, tzinfo=KST).timestamp() * 1000)
 
 # 봇 기록과 원장 순손익 차이가 이 이상이면 알림(누적 기준, USDT)
@@ -46,7 +52,7 @@ ALERT_DIFF_USDT = 20.0
 
 OUT_FIELDS = ["entry_time", "exit_time", "symbol", "margin_usdt",
               "csv_pnl_usdt", "realized_pnl", "funding_usdt", "commission_usdt",
-              "net_pnl_usdt", "net_pnl_pct_margin", "diff_vs_csv", "reason"]
+              "net_pnl_usdt", "net_pnl_pct_margin", "diff_vs_csv", "reason", "src"]
 
 
 def fetch_income():
@@ -64,11 +70,18 @@ def fetch_income():
 
 
 def load_csv_trades():
-    """봇 기록. ragged CSV(16/18필드 혼재)라 DictReader 사용 — pandas 금지."""
-    if not TRADES_CSV.exists():
-        return []
-    with open(TRADES_CSV, encoding="utf-8") as f:
-        return [r for r in csv.DictReader(f) if r.get("exit_time")]
+    """두 봇(원본·완화)의 기록을 합친다.
+    ragged CSV(16/18필드 혼재)라 DictReader 사용 — pandas 금지(CLAUDE.md 2항)."""
+    rows = []
+    for p in TRADES_CSVS:
+        if not p.exists():
+            log.warning(f"{p.name} 없음 — 건너뜀")
+            continue
+        with open(p, encoding="utf-8") as f:
+            n0 = len(rows)
+            rows += [dict(r, _src=p.name) for r in csv.DictReader(f) if r.get("exit_time")]
+            log.info(f"  {p.name}: {len(rows) - n0}건")
+    return rows
 
 
 def to_ms(iso):
@@ -113,24 +126,50 @@ def main():
         margin = float(t.get("margin_usdt") or 0) or 30.0
         csv_pnl = float(t.get("pnl_usdt") or 0)
 
-        # 청산은 CSV 기록보다 늦게 찍힌 사례가 있음(서버측스탑 최대 8.5h) → 뒤로 여유 12h
-        lo, hi = e_ms - 60_000, x_ms + 12 * 3600_000
+        # ★ 2026-08-29: 봇이 2개가 되면서 **같은 심볼을 겹치는 시간대에** 거래하는 일이 생겼다.
+        #   기존 단일창(entry-60s ~ exit+12h) 그리디 매칭은 exit_time이 이른 거래가
+        #   뒤 거래의 income까지 통째로 가져가버린다 — 실측으로 ONGUSDT(-24.06)와
+        #   BICOUSDT 원본봇 건이 net=0으로 사라졌다(완화봇 ONG가 08-26T23:13에 청산되며
+        #   창 [08-26T22:08, 08-27T11:13]로 원본봇 08-27T07:04 건을 먹음).
+        #   → 2단계로 나눈다. 1단계는 자기 보유구간에 확실히 속한 것만 가져가고,
+        #     2단계(뒤로 12h)는 1단계에서 아무것도 못 받은 거래에만 적용한다.
+        #     12h 여유는 서버측스탑 청산이 CSV보다 최대 8.5h 늦게 찍히는 사례 때문에 남긴다.
         realized = funding = comm = 0.0
-        for i, (ts, typ, inc) in enumerate(by_sym.get(sym, [])):
-            key = (sym, i)
-            if key in used or not (lo <= ts <= hi):
-                continue
-            if typ == "REALIZED_PNL":
-                realized += inc; used.add(key)
-            elif typ == "FUNDING_FEE":
-                funding += inc; used.add(key)
-            elif typ == "COMMISSION":
-                comm += inc; used.add(key)
 
-        if realized == 0 and funding == 0 and comm == 0:
-            unmatched += 1
+        def _claim(lo, hi):
+            nonlocal realized, funding, comm
+            got = False
+            for i, (ts, typ, inc) in enumerate(by_sym.get(sym, [])):
+                key = (sym, i)
+                if key in used or not (lo <= ts <= hi):
+                    continue
+                if typ == "REALIZED_PNL":
+                    realized += inc; used.add(key); got = True
+                elif typ == "FUNDING_FEE":
+                    funding += inc; used.add(key); got = True
+                elif typ == "COMMISSION":
+                    comm += inc; used.add(key); got = True
+            return got
 
-        net = realized + funding + comm
+        # 1단계: 보유구간 + 청산 직후 5분(체결 지연분)
+        hit = _claim(e_ms - 60_000, x_ms + 300_000)
+        # 2단계: 그래도 비었으면 서버측스탑 지연을 감안해 뒤로 12h까지 확장
+        if not hit:
+            _claim(e_ms - 60_000, x_ms + 12 * 3600_000)
+
+        # ★ 2026-08-29: 마진(spot) 거래는 선물 income 원장에 아예 없다 —
+        #   마진 숏의 비용은 펀딩비가 아니라 **대출이자**라 다른 엔드포인트다.
+        #   여기서 0으로 잡으면 "펀딩비 0인 좋은 거래"로 둔갑하므로, CSV값을 그대로 쓰되
+        #   이자 미반영임을 명시한다(= 이 행의 net은 실제보다 이자만큼 낙관적).
+        is_margin = "[마진]" in (t.get("reason") or "")
+        if is_margin:
+            net = csv_pnl
+            realized = csv_pnl
+            funding = comm = 0.0
+        else:
+            if realized == 0 and funding == 0 and comm == 0:
+                unmatched += 1
+            net = realized + funding + comm
         tot_csv += csv_pnl; tot_net += net
         out.append(dict(
             entry_time=t["entry_time"], exit_time=t["exit_time"], symbol=sym,
@@ -138,11 +177,27 @@ def main():
             realized_pnl=round(realized, 4), funding_usdt=round(funding, 4),
             commission_usdt=round(comm, 4), net_pnl_usdt=round(net, 3),
             net_pnl_pct_margin=round(net / margin * 100, 2) if margin else "",
-            diff_vs_csv=round(net - csv_pnl, 3), reason=t.get("reason", "")))
+            diff_vs_csv=round(net - csv_pnl, 3), reason=t.get("reason", ""),
+            src=t.get("_src", "")))
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=OUT_FIELDS)
-        w.writeheader(); w.writerows(out)
+    # ★ 2026-08-29(중요): 매칭은 두 봇을 **합쳐서** 해야 한다(같은 심볼 income을 양쪽이
+    #   중복으로 가져가지 않도록 `used`가 전역이어야 하므로). 그러나 **출력은 봇별로 나눈다.**
+    #   `scripts/gate_eval.py:42`가 margin_short_ledger.csv를 src 필터 없이 읽어
+    #   51건 관문 "원장 잣대"에 쓰기 때문이다 — 완화봇을 섞으면 사전확정된 표본 정의
+    #   (docs/51GATE_UNITS.md)가 조용히 깨진다. 실제로 이 파일을 합쳤을 때
+    #   건당 EV가 -0.724 → -0.506 USDT로, 다른 전략 거래를 섞은 것만으로 좋아졌다.
+    #   CLAUDE.md 7항(동결 규율) 위반이므로 원장 파일은 원본봇 전용으로 되돌린다.
+    def _write(path, rows_):
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=OUT_FIELDS)
+            w.writeheader(); w.writerows(rows_)
+
+    main_rows = [r for r in out if r["src"] == TRADES_CSVS[0].name]
+    wide_rows = [r for r in out if r["src"] == TRADES_CSVS[1].name]
+    _write(OUT_CSV, main_rows)          # 원본봇 전용 — gate_eval이 읽는 파일(표본 정의 불변)
+    _write(OUT_CSV_WIDE, wide_rows)     # 완화봇 전용 — /달력이 두 파일을 합산해서 읽는다
+    log.info(f"  출력 분리: {OUT_CSV.name} {len(main_rows)}건 / "
+             f"{OUT_CSV_WIDE.name} {len(wide_rows)}건")
 
     wins = sum(1 for r in out if r["net_pnl_usdt"] > 0)
     margins = sum(r["margin_usdt"] for r in out) or 1

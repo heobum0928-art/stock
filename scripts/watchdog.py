@@ -132,13 +132,25 @@ ALERT_ON_RESTART = set()
 #   (watchdog BOTS·schtasks·프로세스 어디에도 없었고 grep 호출부 0곳).
 #   "15분 주기 무보호 감사"가 문서에만 있고 실제로는 존재하지 않았다 — 실거래 마진숏 2건이
 #   무보호인데 아무도 몰랐던 직접 원인. 등록해서 실제로 돌게 한다.
-ONESHOT_BOTS = {"margin_manual_long_trader", "_protection_audit"}
+ONESHOT_BOTS = {"margin_manual_long_trader", "_protection_audit", "ledger_reconcile"}
+
+# ★ 2026-08-29: ONESHOT은 종료 즉시 재기동한다(~40초 주기). 거래소 원장을 페이지네이션으로
+#   긁는 ledger_reconcile을 그 주기로 돌리면 레이트리밋에 걸린다 — 최소 재기동 간격을 둔다.
+#   여기 없는 ONESHOT은 기존대로 즉시 재기동(동작 변경 없음).
+ONESHOT_MIN_INTERVAL_SEC = {
+    "ledger_reconcile": 1800,     # 30분. 달력이 보는 순손익 원장 갱신용
+}
+_oneshot_next_at = {}             # name -> 이 시각 이후에만 재기동
 
 BOTS = {
     "tg_bot":                ROOT / "scripts" / "tg_bot.py",
     # ★ 2026-08-26: 실거래 포지션의 서버측 손절이 실제 거래소에 살아있는지 재검증(무보호면 🚨).
     #   ONESHOT이라 매 사이클(~50초) 돌며 체크하고 종료한다.
     "_protection_audit":     ROOT / "scripts" / "_protection_audit.py",
+    # ★ 2026-08-29(사용자 발견 "달력 합계가 이상한데"): /달력이 보는 순손익 원장을 갱신한다.
+    #   봇 CSV엔 펀딩비·수수료가 없어 달력이 실제보다 32 USDT 낙관적이었다. 읽기전용(GET만).
+    #   ONESHOT + 30분 간격(ONESHOT_MIN_INTERVAL_SEC) — 원장 페이지네이션이라 매 사이클은 과하다.
+    "ledger_reconcile":      ROOT / "scripts" / "ledger_reconcile.py",
     # "claude_intelligence" 제거 (2026-07-09): claude CLI 서브프로세스 호출이 계속 실패
     # (WinError 2, 5분마다 헛돌기만 함) + 사용자 지시로 오토리서치/루프 당분간 중단.
     # "claude_intelligence":   ROOT / "scripts" / "claude_intelligence.py",  # CI Mode
@@ -507,7 +519,16 @@ def main() -> None:
         for name, script in BOTS.items():
             proc = procs[name]
             if proc.poll() is not None:  # 프로세스 종료됨
-                if name in ONESHOT_BOTS and proc.returncode == 0:
+                # ★ 2026-08-29: 주기 제한이 걸린 ONESHOT은 간격이 찰 때까지 재기동하지 않는다.
+                _iv = ONESHOT_MIN_INTERVAL_SEC.get(name)
+                if _iv and name in ONESHOT_BOTS and proc.returncode == 0:
+                    if name not in _oneshot_next_at:
+                        _oneshot_next_at[name] = now + _iv
+                    if now < _oneshot_next_at[name]:
+                        continue      # 아직 이르다 — 죽은 채로 둔다(정상)
+                    _oneshot_next_at[name] = now + _iv
+                    log.info(f"[{name}] 주기점검 완료 → 재기동({_iv//60}분 간격)")
+                elif name in ONESHOT_BOTS and proc.returncode == 0:
                     log.info(f"[{name}] 주기점검 완료 → 재기동")
                 else:
                     log.warning(f"[{name}] 죽음 감지 (exit={proc.returncode}) → 재시작")

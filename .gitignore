@@ -23,6 +23,9 @@ data/*
 #   → 거래기록/판정근거만 화이트리스트로 되살린다. 캔들캐시(7.2GB) 등은 계속 제외.
 !data/*_trades.csv
 !data/margin_short_ledger.csv
+# ★ 2026-08-29: 원장을 봇별로 분리(gate_eval이 원본봇 파일만 읽어야 표본 정의가 안 깨짐).
+#   완화봇 원장도 /달력이 합산해 쓰므로 같이 백업한다.
+!data/margin_short_wide_ledger.csv
 !data/margin_short_shadow.csv
 !data/shadow_signals.csv
 !data/breadth_events.csv

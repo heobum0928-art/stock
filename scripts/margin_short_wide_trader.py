@@ -179,7 +179,11 @@ MARGIN_PER_TRADE = 50.0  # 증거금(상한과 동일). 실제 사용은 min(잔
 #   엔진상한 125USDT라 동시진입 5건→4건으로 줄지만 무리한 증액은 아님. 다만 이 시점의
 #   증액 자체가 "좋은 결과 보고 사이즈 키우기" 패턴 — 51건 freeze 취지와 다소 배치되는
 #   점은 기록해둠(would_change_log.md 참고).
-FUT_MARGIN_PER_TRADE = 30.0
+# ★ 2026-08-29: 사용자 지시로 30→50(67%↑). 원본봇과 동일하게 맞춤(자매엔진이므로 사이징 통일).
+#   손절 1건 손실 -24→-40 USDT. 같은 날 binance_live_config.json의
+#   daily_loss_limit_usdt도 100→200으로 함께 올렸다.
+#   → 엔진캡 350 기준 동시 11건 → 7건.
+FUT_MARGIN_PER_TRADE = 50.0
 
 # ★ 2026-08-26: 마진 담보비율 경보 단계. 1.3 강제청산 / 1.5 신규진입 차단(margin_guard._gate).
 ML_ALERT_LEVELS = [2.0, 1.7, 1.5, 1.4]

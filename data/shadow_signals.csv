@@ -63,3 +63,6 @@ signal_id,time,symbol,pump_pct,price,qvol_24h,chg_24h,funding_rate,funding_inter
 0829031312-DEXEUSDT,2026-08-29T03:13:12.487996+09:00,DEXEUSDT,30.04,2.541,53974891,32.48,-0.0001831,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
 0829072058-AKEUSDT,2026-08-29T07:20:58.351375+09:00,AKEUSDT,31.77,0.010473,112399688,53.22,0.00019371,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
 0829190928-4USDT,2026-08-29T19:09:28.657020+09:00,4USDT,31.34,0.015864,12177098,33.52,0.00011359,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
+0829215355-BTRUSDT,2026-08-29T21:53:55.619983+09:00,BTRUSDT,31.16,0.21289,266409238,28.91,0.0005493,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
+0829215711-TACUSDT,2026-08-29T21:57:11.972539+09:00,TACUSDT,33.05,0.002975,39394388,12.94,5e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
+0830012306-PROMUSDT,2026-08-30T01:23:06.619820+09:00,PROMUSDT,30.67,6.502,80865482,28.58,5e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only

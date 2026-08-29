@@ -76,7 +76,13 @@ COOLDOWN_PATH = ROOT / "data" / "quietpump_long_cooldown.json"
 
 TRADE_FIELDS = ["entry_time", "exit_time", "symbol", "kind", "entry_price", "exit_price",
                 "qv_ratio", "r12_pct", "price_pnl_pct", "funding_pct", "fee_pct",
-                "net_pnl_pct", "hold_h", "reason", "btc_entry", "btc_exit", "signal_delay_s"]
+                "net_pnl_pct", "hold_h", "reason", "btc_entry", "btc_exit", "signal_delay_s",
+                "mfe_pct", "mae_pct"]
+# ★ 2026-08-30(사용자 지시): 청산규칙 설계를 시작하려면 보유 중 최고/최저가 필요한데
+#   지금까지는 진입가·청산가만 기록해 "-41.6%로 끝난 그 거래가 중간에 더 깊이 빠졌다가
+#   반등한 건지, 거기가 바닥이었는지" 알 방법이 없었다. 청산 시점에 보유구간 5분봉을
+#   통째로 조회해 실제 고가/저가로 계산한다(폴링 스냅샷이 아니라 진짜 캔들 값).
+#   기존 30쌍은 소급 불가 — 이 필드는 빈 값으로 남는다(허위로 채우지 않는다).
 
 
 def _load(p, d):
@@ -142,6 +148,30 @@ def check_signal(sym):
     r12 = (float(c[-1]) / float(c[-1 - R12_N]) - 1.0) * 100.0
     hit = (ratio <= QV_RATIO_MAX) and (r12 >= R12_MIN)
     return hit, ratio, r12, float(c[-1])
+
+
+def excursion_pct(sym, entry_px, start_ms, end_ms):
+    """보유구간 5분봉 고가/저가로 mfe(최고)·mae(최저) 수익률 계산. 롱 기준(가격 상승=+).
+    최대 24h=288봉이라 limit=500 한 번으로 전체 구간을 덮는다. 실패 시 (None, None)
+    — 실패를 0으로 채우면 '변동 없었다'로 오독되므로 빈 값으로 남긴다."""
+    try:
+        r = requests.get(f"{FAPI}/fapi/v1/klines",
+                         params={"symbol": sym, "interval": "5m",
+                                 "startTime": start_ms, "endTime": end_ms, "limit": 500},
+                         timeout=10)
+        if r.status_code != 200:
+            return None, None
+        k = r.json()
+        if not k:
+            return None, None
+        hi = max(float(x[2]) for x in k)
+        lo = min(float(x[3]) for x in k)
+        mfe = (hi / entry_px - 1.0) * 100.0
+        mae = (lo / entry_px - 1.0) * 100.0
+        return round(mfe, 3), round(mae, 3)
+    except Exception as e:
+        log.warning(f"고저 조회 실패 {sym}: {e}")
+        return None, None
 
 
 def funding_pct(sym, start_ms, end_ms):
@@ -218,6 +248,8 @@ def main():
                 fnd = funding_pct(p["symbol"], int(p["entry_ts"] * 1000), int(now * 1000))
                 fee = 2 * FEE_SIDE * 100.0 * LEVERAGE
                 net = price_pnl - fnd * LEVERAGE - fee      # 롱은 양수 펀딩 지불
+                mfe, mae = excursion_pct(p["symbol"], p["entry_price"],
+                                          int(p["entry_ts"] * 1000), int(now * 1000))
                 log_trade(dict(
                     entry_time=p["entry_iso"], exit_time=datetime.now(KST).isoformat(),
                     symbol=p["symbol"], kind=p["kind"],
@@ -227,7 +259,8 @@ def main():
                     fee_pct=round(fee, 3), net_pnl_pct=round(net, 3),
                     hold_h=round((now - p["entry_ts"]) / 3600, 2), reason=f"{HOLD_H}h만기",
                     btc_entry=p.get("btc_entry"), btc_exit=btc,
-                    signal_delay_s=p.get("signal_delay_s")))
+                    signal_delay_s=p.get("signal_delay_s"),
+                    mfe_pct=mfe, mae_pct=mae))
                 log.info(f"[모의청산] {p['symbol']}({p['kind']}) @{px:g} "
                          f"순손익 {net:+.2f}% (가격 {price_pnl:+.2f} 펀딩 -{fnd*LEVERAGE:.2f} 수수료 -{fee:.2f})")
                 del positions[key]

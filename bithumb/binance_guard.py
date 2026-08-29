@@ -65,13 +65,28 @@ def load_config() -> dict:
 
 
 def _load_state() -> dict:
+    """★ 2026-08-29: 일일손실한도를 **엔진별**로 분리(사용자 지시).
+    기존엔 이 파일 하나의 realized_pnl_today를 core_lev·mshort_fut·mshort_wide_fut 셋이
+    공유해서, 한 엔진이 손실을 내면 나머지도 같이 막혔다(반대로 한 엔진 수익이 다른 엔진의
+    허용손실을 조용히 늘리기도 했다 — 이쪽이 더 위험). BTC 급락일 = 알트 급등숏이 가장
+    잘 먹는 날이라 방향이 정확히 반대로 물린다.
+
+    `realized_pnl_today`는 **계좌 전체 합계로 계속 유지**한다(보고·호환용).
+    한도 판정은 `by_engine[엔진]`으로 한다.
+
+    마이그레이션: 구형 상태(by_engine 없음)를 읽으면 각 엔진에 기존 합계를 그대로 넣는다.
+    = 전환 순간의 동작이 기존과 정확히 같고(가장 보수적), 이후부터 갈라진다."""
     today = datetime.now(KST).date().isoformat()
+    fresh = {"date": today, "realized_pnl_today": 0.0, "by_engine": {}}
     try:
         s = json.loads(STATE.read_text(encoding="utf-8"))
         if s.get("date") != today:
-            s = {"date": today, "realized_pnl_today": 0.0}
+            return fresh
     except Exception:
-        s = {"date": today, "realized_pnl_today": 0.0}
+        return fresh
+    if "by_engine" not in s:
+        legacy = float(s.get("realized_pnl_today", 0.0) or 0.0)
+        s["by_engine"] = {e: legacy for e in load_config().get("engine_caps_usdt", {})}
     return s
 
 
@@ -303,8 +318,10 @@ class BinanceGuard:
         finally:
             _release_lock(lock_path)
         dll = cfg.get("daily_loss_limit_usdt", 0)
-        if s["realized_pnl_today"] <= -abs(dll):
-            return False, f"일일 손실한도 도달({s['realized_pnl_today']:.2f})"
+        # ★ 2026-08-29: 엔진별 카운터로 판정(위 _load_state 주석 참조).
+        mine = float(s.get("by_engine", {}).get(self.engine, 0.0) or 0.0)
+        if mine <= -abs(dll):
+            return False, f"일일 손실한도 도달({self.engine} {mine:.2f})"
         return True, "OK"
 
     def _ledger(self, side, qty, notional, result):
@@ -377,6 +394,25 @@ class BinanceGuard:
             return {"error": str(e)}
         log.warning(f"[{self.engine}] ★실주문 {side} {qty}BTC(명목 {delta_notional:+.1f} USDT) @~{price:.0f} → {res.get('orderId')}")
         self._ledger(side, qty, delta_notional, res)
+        # ★ 2026-08-29(사용자 지시 "팔 때만 적용하고 상태에서 빼"): 축소(SELL)는 실현손익이
+        #   발생하는데 core_lev는 지금까지 record_realized()를 **한 번도 호출하지 않았다**.
+        #   그래서 BTC 롱을 팔아 이익이든 손실이든 어디에도 잡히지 않았다(일일한도 카운터·보고 전부).
+        #   주문 응답(ACK)에는 realizedPnl이 없으므로 체결내역에서 그 orderId 분만 합산한다.
+        #   ※ 미실현은 여전히 어디에도 표시하지 않는다 — 포지션현황(telegram_status)은
+        #     숏 봇 파일만 읽으므로 변경 없음.
+        if side == "SELL":
+            try:
+                oid = res.get("orderId")
+                tr = _signed("GET", "/fapi/v1/userTrades", {"symbol": SYMBOL, "limit": 50})
+                if tr.status_code == 200:
+                    realized = sum(float(t.get("realizedPnl", 0) or 0)
+                                   for t in tr.json() if t.get("orderId") == oid)
+                    if realized:
+                        self.record_realized(realized)
+                else:
+                    log.warning(f"[{self.engine}] 실현손익 조회 실패 {tr.status_code} — 기록 누락")
+            except Exception as e:
+                log.warning(f"[{self.engine}] 실현손익 기록 예외: {e}")
         return {"live": True, "result": res}
 
     def place_protective_stop(self, coin: str, stop_price: float) -> dict:
@@ -556,8 +592,13 @@ class BinanceGuard:
     def record_realized(self, pnl_usdt: float):
         lock_path = _file_lock(STATE)
         try:
-            s = _load_state(); s["realized_pnl_today"] += pnl_usdt; _save_state(s)
-            log.info(f"[{self.engine}] 실현손익 {pnl_usdt:+.2f} USDT → 당일누적 {s['realized_pnl_today']:+.2f}")
+            s = _load_state()
+            s["realized_pnl_today"] += pnl_usdt          # 계좌 전체 합계(보고용)
+            be = s.setdefault("by_engine", {})
+            be[self.engine] = float(be.get(self.engine, 0.0) or 0.0) + pnl_usdt
+            _save_state(s)
+            log.info(f"[{self.engine}] 실현손익 {pnl_usdt:+.2f} USDT → "
+                     f"엔진누적 {be[self.engine]:+.2f} / 계좌누적 {s['realized_pnl_today']:+.2f}")
         finally:
             _release_lock(lock_path)
 

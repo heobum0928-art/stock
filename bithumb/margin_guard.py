@@ -52,13 +52,22 @@ def load_config() -> dict:
 
 
 def _load_state():
+    """★ 2026-08-29: 일일손실한도를 **엔진별**로 분리(binance_guard._load_state와 동일 설계).
+    기존엔 mshort·manuallong·mshort_wide가 이 파일 하나의 realized_pnl_today를 공유해
+    한 엔진 손절이 나머지를 같이 막았다. realized_pnl_today는 계좌 합계로 유지하고,
+    한도 판정만 by_engine[엔진]으로 한다. 구형 상태는 각 엔진에 기존 합계를 복사해
+    전환 순간의 동작을 기존과 동일하게 만든다(가장 보수적)."""
     today = datetime.now(KST).date().isoformat()
+    fresh = {"date": today, "realized_pnl_today": 0.0, "by_engine": {}}
     try:
         s = json.loads(STATE.read_text(encoding="utf-8"))
         if s.get("date") != today:
-            s = {"date": today, "realized_pnl_today": 0.0}
+            return fresh
     except Exception:
-        s = {"date": today, "realized_pnl_today": 0.0}
+        return fresh
+    if "by_engine" not in s:
+        legacy = float(s.get("realized_pnl_today", 0.0) or 0.0)
+        s["by_engine"] = {e: legacy for e in load_config().get("engine_caps_usdt", {})}
     return s
 
 
@@ -305,8 +314,10 @@ class MarginGuard:
             s = _load_state()
         finally:
             _release_lock(lock_path)
-        if s["realized_pnl_today"] <= -abs(cfg.get("daily_loss_limit_usdt", 0)):
-            return False, f"일일손실한도 도달({s['realized_pnl_today']:.2f})"
+        # ★ 2026-08-29: 엔진별 카운터로 판정(위 _load_state 주석 참조).
+        _mine = float(s.get("by_engine", {}).get(self.engine, 0.0) or 0.0)
+        if _mine <= -abs(cfg.get("daily_loss_limit_usdt", 0)):
+            return False, f"일일손실한도 도달({self.engine} {_mine:.2f})"
         # ★ 2026-07-22: 계좌를 롱/숏 엔진이 공유해서 한쪽이 크게 차입하면 담보비율이 나빠질 수 있음.
         #   신규진입 전 모든 엔진 공통으로 여기서 한 번 확인(단일 관문) — 청산위험(통상 1.1 부근) 대비
         #   여유를 두고 1.5 미만이면 신규진입 차단(기존 포지션엔 영향 없음, 청산 자체는 거래소가 별도 처리).
@@ -697,8 +708,13 @@ class MarginGuard:
     def record_realized(self, pnl_usdt):
         lock_path = _file_lock(STATE)
         try:
-            s = _load_state(); s["realized_pnl_today"] += pnl_usdt; _save_state(s)
-            log.info(f"[{self.engine}] 실현손익 {pnl_usdt:+.2f} USDT → 당일 {s['realized_pnl_today']:+.2f}")
+            s = _load_state()
+            s["realized_pnl_today"] += pnl_usdt          # 계좌 전체 합계(보고용)
+            be = s.setdefault("by_engine", {})
+            be[self.engine] = float(be.get(self.engine, 0.0) or 0.0) + pnl_usdt
+            _save_state(s)
+            log.info(f"[{self.engine}] 실현손익 {pnl_usdt:+.2f} USDT → "
+                     f"엔진누적 {be[self.engine]:+.2f} / 계좌누적 {s['realized_pnl_today']:+.2f}")
         finally:
             _release_lock(lock_path)
 

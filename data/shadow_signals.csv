@@ -66,3 +66,4 @@ signal_id,time,symbol,pump_pct,price,qvol_24h,chg_24h,funding_rate,funding_inter
 0829215355-BTRUSDT,2026-08-29T21:53:55.619983+09:00,BTRUSDT,31.16,0.21289,266409238,28.91,0.0005493,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
 0829215711-TACUSDT,2026-08-29T21:57:11.972539+09:00,TACUSDT,33.05,0.002975,39394388,12.94,5e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
 0830012306-PROMUSDT,2026-08-30T01:23:06.619820+09:00,PROMUSDT,30.67,6.502,80865482,28.58,5e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
+0830143803-SKRUSDT,2026-08-30T14:38:03.737123+09:00,SKRUSDT,30.67,0.013722,41248068,35.05,-0.00044526,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative

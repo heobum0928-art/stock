@@ -72,6 +72,7 @@ HANG_CHECK_OVERRIDE_SEC = {
     "margin_short_trader": 21600,
     "margin_short_wide_trader": 21600,   # ★ 2026-08-25: 원본과 동일 구조·동일 폴링이라 같은 값
     "quietpump_long_paper": 21600,       # ★ 2026-08-26: 순수 모의·I/O바운드, 다른 모의봇과 동일
+    "prom_long_paper": 21600,            # ★ 2026-08-30: 순수 모의·I/O바운드, 동일
     "coinpan_monitor": 21600,            # ★ 2026-08-27: 15분 주기 웹수집, CPU 거의 안 씀
     "accum_trader": 5400,
     # ★ 2026-08-17: 위 세 봇과는 원인이 다른 오탐 — 이 둘은 폴링주기 자체는 60초로 짧은데,
@@ -185,6 +186,7 @@ BOTS = {
     #   PREREG_SWEEP_BINANCE 봉인을 통과한 첫 후보를 60건까지 검증하는 중이라
     #   중간에 죽으면 표본 수집이 끊긴다(사전등록 마감 2026-10-26).
     "quietpump_long_paper":  ROOT / "scripts" / "quietpump_long_paper.py",  # ★조용한급등 롱 모의 (2026-08-26 신설)
+    "prom_long_paper":       ROOT / "scripts" / "prom_long_paper.py",       # ★PROM 롱 모의 (2026-08-30 신설, PREREG_PROM_LONG.md)
     "coinpan_monitor":       ROOT / "scripts" / "coinpan_monitor.py",       # ★코인판 게시판 수집 (2026-08-27 신설, 관찰 전용·매매 무관)
     # "margin_manual_long_trader" 제거 (2026-08-20, 기록감사 재확인): 08-15에 이미 발견된 대로
     # __main__ 블록이 없어 watchdog이 등록해도 프로세스가 실제로 뜬 적이 없음(실측 확인 —

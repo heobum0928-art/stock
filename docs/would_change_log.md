@@ -4669,3 +4669,9 @@ backtest) 아이디어를 재현해 그날 바로 검증·적용한 것 — CLAU
 먼저 정하고 그에 맞는 문턱을 찾은 것.
 
 문제 생기면 `CUSUM_ENABLED = False`로 되돌리면 즉시 이전 동작으로 복귀.
+
+## 2026-08-31 (6) — 완화봇 CUSUM 필터 취소 (사용자 지시)
+
+`margin_short_wide_trader.py`의 `CUSUM_ENABLED`를 `False`로 되돌림 — 완화봇은 다시
+필터 없이(7h+15~30%면 전부) 진입한다. 원본봇(`margin_short_trader.py`)의 CUSUM 필터는
+그대로 유지(`CUSUM_ENABLED=True`, 문턱 56.5).

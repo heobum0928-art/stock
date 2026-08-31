@@ -197,3 +197,36 @@ if __name__ == "__main__":
         import pickle
         pickle.dump(rows, open(os.path.join(D, "pyramid_result.pkl"), "wb"))
         print(f"완료: {len(rows)}건 → pyramid_result.pkl")
+
+    elif mode == "run_notrail":
+        # 2026-08-31: 실거래 margin_short_trader.py의 트레일링을 껐다(PREREG_V1_NOTRAIL.md
+        # 판정 통과). 원래 불타기 검정(위 run)은 트레일링이 있는 V0_base를 기준으로 했고,
+        # 기각 사유(짝차이 -0.27%p)가 발동 307건의 청산유형 전부(215 trail + 92 expiry,
+        # stop 0건)에서 나왔다 — 즉 기각은 거의 전적으로 트레일링의 부작용이었다. 트레일링을
+        # 뺀 새 기준선(손절 -40%+48h만기만)으로 같은 신호셋에 다시 짝비교한다. 트리거(+25%)·
+        # 추가량(50%)·손절폭(40%) 등 PREREG_PYRAMID.md 1절의 규칙 자체는 바꾸지 않는다 —
+        # 바뀐 건 "비교 대상 기준선(트레일링 유무)"뿐이다.
+        print("=== 불타기(+25%,50%,1회) vs 현행(트레일링 없음) — 2,399건 짝비교 ===")
+        syms = sorted(os.path.basename(p)[:-4] for p in glob.glob(os.path.join(PQ, "*.npz")))
+        rows = []
+        for si, s in enumerate(syms):
+            sg, arr = sigs_for(s)
+            if not sg:
+                continue
+            t, o, h, l, c, qv = arr
+            for (i, ts, px, ret7, v24) in sg:
+                P0 = float(c[i]); j = min(i + 1 + HOLD_BARS, len(c))
+                if j - (i + 1) < 12:
+                    continue
+                sl = slice(i + 1, j)
+                hh, ll, oo, cc, bt = h[sl], l[sl], o[sl], c[sl], t[sl]
+                cf = cumfund_for(s, int(t[i]), bt)
+                r0 = simulate(oo, hh, ll, cc, cf, P0, add_trig=9999.0, trail_trig=9999.0)
+                r1 = simulate(oo, hh, ll, cc, cf, P0, trail_trig=9999.0)
+                rows.append((s, int(ts), holdout(s), r0['ret_orig'], r1['ret_orig'],
+                             r1['ret_cap'], r1['added'], r1['kind']))
+            if (si + 1) % 200 == 0:
+                print(f"  {si+1}/{len(syms)} 종목, 신호 {len(rows)}건", flush=True)
+        import pickle
+        pickle.dump(rows, open(os.path.join(D, "pyramid_result_notrail.pkl"), "wb"))
+        print(f"완료: {len(rows)}건 → pyramid_result_notrail.pkl")

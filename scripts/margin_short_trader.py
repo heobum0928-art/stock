@@ -144,6 +144,12 @@ FOLLOWUP_PATH = ROOT / "data" / "margin_short_followup.json"
 SERVER_STOP_MARGIN = True
 TRAIL_TRIGGER_PCT = 15.0  # ★ 2026-08-10: 최유리(가격하락) 15%p 이상 찍으면 트레일링 무장
 TRAIL_GIVEBACK_PCT = 10.0  # 그 최고점에서 10%p 반납하면 즉시 청산(48h/스탑 기다리지 않음)
+# ★ 2026-08-31: PREREG_V1_NOTRAIL.md 조기 판정(원래 9/2 예정, 사용자 지시로 이틀 앞당김) —
+#   트레일링 제거(V1_notrail)가 원본(V0_base) 대비
+#   짝차이 평균 +6.45%p, 95%/99% 신뢰구간 하한 모두 양수, 최대기여 1건 제외해도 유지,
+#   실제 발동 쌍만 봐도 승률 83%로 C1~C5 전부 통과(사용자 확인 후 적용). 문제 생기면 이 값만
+#   True로 되돌리면 즉시 이전 동작(트레일링 사용)으로 복귀한다 — 위 상수는 그대로 둔다.
+TRAIL_ENABLED = False
 COOLDOWN_H = 12           # 코인당 재진입 쿨다운
 STRIKE_BLACKLIST_H = 24*7  # ★ 2026-08-09: 같은 코인이 연속 2회 스탑(-40%)에 걸리면 7일 블랙리스트
                             # (TUTUSDT 2연패 계기 — 신호가 특정 코인과 구조적으로 안 맞을 가능성 대응,
@@ -829,7 +835,7 @@ def main():
                     except Exception: pass
                     _save(POS_PATH, positions)
                 peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
-                trail_hit = peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
+                trail_hit = TRAIL_ENABLED and peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
                 if not stop_hit and not trail_hit and now < pos["exit_ts"]:
                     continue
                 reason = f"스탑+{STOP_PCT:.0f}%" if stop_hit else (f"트레일링(최고{peak_pnl_pct:.0f}%→{cur_pnl_pct:.0f}%)" if trail_hit else f"{HOLD_H}h만기")

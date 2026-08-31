@@ -21,6 +21,7 @@
 포트 47251. Run: python scripts/margin_short_trader.py
 """
 import sys, os, atexit, time, json, csv, socket, logging, statistics
+import numpy as np
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 try:
@@ -395,6 +396,52 @@ def pump_6h(sym):
         return (cur / past - 1) * 100, cur
     except Exception:
         return None, 0
+
+
+# ★ 2026-08-31: CUSUM 이상급등 필터 — research/m5bt/cusum_pump.py 검증 결과 반영
+#   (사전등록 없는 탐색이었으나 홀드아웃·부트스트랩으로 확인, docs/would_change_log.md 참고).
+#   단순 "몇% 올랐나"만 보면 조작성 급등과 진짜 강세를 구별 못 한다는 문제의식에서, 그 코인
+#   평소 변동성 대비 이번 상승이 얼마나 이상한지를 누적(CUSUM)해서 점수로 매긴다.
+#   1년 백테스트(원본봇 신호 2,399건) 상위10% 컷(점수>=56.5)에서 짝차이 +6.64%p,
+#   95%CI [+0.72,+11.94](0 배제) — 나머지 90%를 걸러내는 대신 신호 빈도가 10분의 1로 줄어든다.
+#   문제 생기면 CUSUM_ENABLED만 False로 되돌리면 즉시 이전 동작(필터 없음)으로 복귀한다.
+CUSUM_ENABLED = True
+CUSUM_VOLWIN = 288          # 24h 변동성 lookback(백테스트와 동일)
+CUSUM_K = 0.3               # 드리프트(잡음 무시 정도, 백테스트와 동일)
+CUSUM_THRESHOLD = 56.5      # 백테스트 상위10% 컷 그대로
+CUSUM_KLINES_LIMIT = 1000   # API 1회 한도(≈3.5일) — 백테스트는 최대 4일(1152봉) lookback을 썼으므로
+                            # 완전히 동일하진 않다. 문턱값은 백테스트 그대로 가져온 근사치라, 실제
+                            # 통과 빈도가 예상(주 1건)과 크게 다르면 로그를 보고 재조정이 필요하다.
+
+
+def cusum_score(sym):
+    """CUSUM(누적 이상변동) 점수. 실패 시 None."""
+    try:
+        r = requests.get(f"{BASE}/api/v3/klines",
+                          params={"symbol": sym, "interval": "5m", "limit": CUSUM_KLINES_LIMIT}, timeout=8)
+        if r.status_code != 200: return None
+        k = r.json()
+        n = len(k)
+        if n < CUSUM_VOLWIN + 10: return None
+        c = np.array([float(x[4]) for x in k])
+        ret = np.zeros(n); ret[1:] = c[1:] / c[:-1] - 1.0
+        cs1 = np.concatenate(([0.0], np.cumsum(ret)))
+        cs2 = np.concatenate(([0.0], np.cumsum(ret * ret)))
+        sum1 = cs1[CUSUM_VOLWIN:] - cs1[:n + 1 - CUSUM_VOLWIN]
+        sum2 = cs2[CUSUM_VOLWIN:] - cs2[:n + 1 - CUSUM_VOLWIN]
+        mean = sum1 / CUSUM_VOLWIN
+        var = np.maximum(sum2 / CUSUM_VOLWIN - mean ** 2, 1e-12)
+        std = np.sqrt(var)
+        std_full = np.full(n, np.nan); std_full[CUSUM_VOLWIN:] = std[:n - CUSUM_VOLWIN]
+        zsc = np.zeros(n)
+        valid = ~np.isnan(std_full) & (std_full > 1e-9)
+        zsc[valid] = ret[valid] / std_full[valid]
+        S = 0.0
+        for i in range(CUSUM_VOLWIN, n):
+            S = max(0.0, S + zsc[i] - CUSUM_K)
+        return float(S)
+    except Exception:
+        return None
 
 
 # ★ 2026-07-12 유동성 필터 완화 (200만 → 20만): 200만 필터는 대출가능 248개 중 56개만 통과시켜
@@ -1065,6 +1112,13 @@ def main():
                 ret6h, px6 = pump_6h(sym)      # 2차 정밀 — LOOKBACK_H시간 상승률
                 if ret6h is None or ret6h < PUMP_PCT or ret6h >= PUMP_PCT_MAX:
                     continue
+                if CUSUM_ENABLED:
+                    cscore = cusum_score(sym)
+                    if cscore is None or cscore < CUSUM_THRESHOLD:
+                        log.info(f"CUSUM 필터 탈락 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): "
+                                 f"점수={'N/A' if cscore is None else f'{cscore:.1f}'} < {CUSUM_THRESHOLD}")
+                        continue
+                    log.info(f"CUSUM 필터 통과 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): 점수={cscore:.1f}")
                 if px6 > 0: px = px6
                 ret2h = ret6h   # 기록용(LOOKBACK_H시간 상승률)
                 vr = 0.0

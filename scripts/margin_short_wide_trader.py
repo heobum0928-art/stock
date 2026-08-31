@@ -1110,19 +1110,16 @@ def main():
                 ret6h, px6 = pump_6h(sym)      # 2차 정밀 — LOOKBACK_H시간 상승률
                 if ret6h is None or ret6h < PUMP_PCT or ret6h >= PUMP_PCT_MAX:
                     continue
-                if CUSUM_ENABLED:
-                    cscore = cusum_score(sym)
-                    if cscore is None or cscore < CUSUM_THRESHOLD:
-                        log.info(f"[완화] CUSUM 필터 탈락 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): "
-                                 f"점수={'N/A' if cscore is None else f'{cscore:.1f}'} < {CUSUM_THRESHOLD}")
-                        continue
-                    log.info(f"[완화] CUSUM 필터 통과 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): 점수={cscore:.1f}")
                 if px6 > 0: px = px6
                 ret2h = ret6h   # 기록용(LOOKBACK_H시간 상승률)
                 vr = 0.0
 
                 # ★ 2026-08-09: 신규상장 급등은 되돌림 논리가 안 맞음(TUTUSDT 2연패 계기, 상장빔은
                 # 하이프성이라 계속 갈 수 있음) — 숏 스킵하고 대신 모의 롱만 기록(실주문 없음, dry-run).
+                # ★ 2026-08-31(버그헌터 발견): CUSUM 체크보다 반드시 먼저 와야 한다 — cusum_score()는
+                #   5분봉 298개(약 24.8h) 미만 이력이면 무조건 None을 반환하는데, 상장 25시간 미만
+                #   코인이 정확히 이 경우라 CUSUM을 먼저 돌리면 이 분기(모의롱 기록)에 아예 도달 못 하고
+                #   조용히 스킵되어 신규상장 리서치 표본이 사라진다.
                 if is_recent_listing(coin, listing_age_cache):
                     if sym not in newlisting_positions and len(newlisting_positions) < 10:
                         newlisting_positions[sym] = {
@@ -1132,6 +1129,14 @@ def main():
                         }
                         log.info(f"[모의:신규상장롱] {sym} {LOOKBACK_H}h+{ret6h:.0f}% 신규상장 감지 → 숏 스킵, 모의롱 진입(실주문없음)")
                     continue
+
+                if CUSUM_ENABLED:
+                    cscore = cusum_score(sym)
+                    if cscore is None or cscore < CUSUM_THRESHOLD:
+                        log.info(f"[완화] CUSUM 필터 탈락 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): "
+                                 f"점수={'N/A' if cscore is None else f'{cscore:.1f}'} < {CUSUM_THRESHOLD}")
+                        continue
+                    log.info(f"[완화] CUSUM 필터 통과 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): 점수={cscore:.1f}")
 
                 use_margin = coin in UNIVERSE_SET
                 if use_margin:

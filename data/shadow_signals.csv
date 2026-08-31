@@ -68,3 +68,11 @@ signal_id,time,symbol,pump_pct,price,qvol_24h,chg_24h,funding_rate,funding_inter
 0830012306-PROMUSDT,2026-08-30T01:23:06.619820+09:00,PROMUSDT,30.67,6.502,80865482,28.58,5e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
 0830143803-SKRUSDT,2026-08-30T14:38:03.737123+09:00,SKRUSDT,30.67,0.013722,41248068,35.05,-0.00044526,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
 0830164540-ZKCUSDT,2026-08-30T16:45:40.783236+09:00,ZKCUSDT,31.35,0.05208,30896676,32.94,-0.00078169,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0831023631-TNSRUSDT,2026-08-31T02:36:31.803227+09:00,TNSRUSDT,31.26,0.04497,33428504,33.49,-0.00041491,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0831033057-牛来USDT,2026-08-31T03:30:57.732700+09:00,牛来USDT,33.97,0.12958,242832465,33.32,0.00062903,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
+0831050932-SKRUSDT,2026-08-31T05:09:32.295794+09:00,SKRUSDT,32.65,0.021355,273143314,98.03,-0.00949166,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0831063258-HEMIUSDT,2026-08-31T06:32:58.718937+09:00,HEMIUSDT,30.09,0.013735,48724268,17.92,5e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only
+0831115844-ZORAUSDT,2026-08-31T11:58:44.562192+09:00,ZORAUSDT,31.71,0.009428,68996297,50.82,-0.00216469,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0831154155-FLOCKUSDT,2026-08-31T15:41:55.672832+09:00,FLOCKUSDT,30.67,0.04397,40794644,38.76,-0.0034675,4.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0901014457-SKRUSDT,2026-09-01T01:44:57.804016+09:00,SKRUSDT,30.48,0.029886,1130606691,72.68,-0.00687968,1.0,V0_base|V1_notrail|V2_hold24|V5_stop30,V3_fund8h:funding_8h_only|V4_posfund:funding_non_negative
+0901022503-USELESSUSDT,2026-09-01T02:25:03.206309+09:00,USELESSUSDT,31.29,0.08828,45643111,39.78,2.962e-05,4.0,V0_base|V1_notrail|V2_hold24|V4_posfund|V5_stop30,V3_fund8h:funding_8h_only

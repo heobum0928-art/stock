@@ -207,6 +207,13 @@ def _round_step_up(qty, step):
     return round(steps * step, _step_decimals(step))
 
 
+def _fmt_price(p) -> str:
+    """가격을 항상 소수 표기 문자열로. ★ 2026-09-01(DOGSUSDT 사고): f"{p:.8g}"는
+    0.0001 미만에서 "6.503e-05" 같은 과학적 표기가 되어 거래소가 -1102로 거부한다 —
+    저가 코인 스탑주문이 조용히 무보호로 남는 원인이었다(binance_guard와 동일 수정)."""
+    return f"{p:.12f}".rstrip("0").rstrip(".")
+
+
 def get_margin_usdt() -> float | None:
     """★ API실패 시 None 반환(0.0과 구분) — get_borrowed/get_held와 동일 안전패턴.
     호출부(헬스체크 등)가 "조회실패"와 "진짜 잔고 0"을 구분해야 함."""
@@ -448,7 +455,7 @@ class MarginGuard:
         try:
             r = _signed("POST", "/sapi/v1/margin/order",
                         {"symbol": sym, "side": "SELL", "type": "STOP_LOSS",
-                         "quantity": qty, "stopPrice": f"{stop_price:.8g}",
+                         "quantity": qty, "stopPrice": _fmt_price(stop_price),
                          "sideEffectType": "AUTO_REPAY", "isIsolated": "FALSE"})
             res = r.json()
             if r.status_code != 200:
@@ -507,7 +514,7 @@ class MarginGuard:
             try:
                 r = _signed("POST", "/sapi/v1/margin/order",
                             {"symbol": sym, "side": "BUY", "type": "STOP_LOSS",
-                             "quantity": qty, "stopPrice": f"{stop_price:.8g}",
+                             "quantity": qty, "stopPrice": _fmt_price(stop_price),
                              "sideEffectType": eff, "isIsolated": "FALSE"})
                 body = r.json()
             except Exception as e:
@@ -554,7 +561,7 @@ class MarginGuard:
                         for eff2 in ("AUTO_BORROW_REPAY", "AUTO_REPAY"):
                             r2 = _signed("POST", "/sapi/v1/margin/order",
                                          {"symbol": sym, "side": "BUY", "type": "STOP_LOSS",
-                                          "quantity": qty, "stopPrice": f"{prov:.8g}",
+                                          "quantity": qty, "stopPrice": _fmt_price(prov),
                                           "sideEffectType": eff2, "isIsolated": "FALSE"})
                             b2 = r2.json()
                             if r2.status_code == 200:

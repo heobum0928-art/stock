@@ -430,10 +430,14 @@ class BinanceGuard:
         tick = _price_tick_futures(sym)
         if tick > 0:
             stop_price = _round_step(stop_price, tick)
+        # ★ 2026-09-01(DOGSUSDT 사고): f"{p:.8g}"는 0.0001 미만 가격을 "6.503e-05"처럼
+        #   과학적 표기로 만들어 거래소가 -1102(triggerprice malformed)로 거부한다 —
+        #   저가 코인은 서버측 손절이 아예 안 걸린 채 무보호로 남았다. 항상 소수 표기로 보낸다.
+        trigger_str = f"{stop_price:.12f}".rstrip("0").rstrip(".")
         try:
             r = _signed("POST", "/fapi/v1/algoOrder",
                         {"algoType": "CONDITIONAL", "symbol": sym, "side": "BUY", "type": "STOP_MARKET",
-                         "triggerPrice": f"{stop_price:.8g}", "closePosition": "true",
+                         "triggerPrice": trigger_str, "closePosition": "true",
                          "workingType": "MARK_PRICE"})
             res = r.json()
             if r.status_code != 200:

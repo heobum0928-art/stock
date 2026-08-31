@@ -382,6 +382,46 @@ def btc_volatility_pct() -> float | None:
         return _btc_vol_cache["pct"]
 
 
+# ★ 2026-08-31: BTC 횡보장 필터 — CUSUM 필터와 같은 날 검증·적용(사용자 확인).
+#   1년 백테스트(2,338건 매칭): BTC가 50일 이동평균선 ±2% 안(방향 없는 횡보)일 때 잡힌
+#   신호는 평균 -10.17%/승률 48.8%로 유독 나빴다(횡보 밖은 -3.36%/65.2%). CUSUM 상위10%와
+#   결합하면 +7.04% → +9.64%로 개선되고 훈련(+9.58%)·홀드아웃(+9.85%) 둘 다 유지,
+#   99%CI [+1.67,+17.05]로 전부 양수. 상세: docs/would_change_log.md 2026-08-31.
+#   과거 폐기된 변동장필터(REGIME_FILTER_ON, 24h 변동폭 기준)와는 다른 지표다 — 그건
+#   "얼마나 요동치나", 이건 "방향이 있나 없나"를 본다.
+#   문제 생기면 BTC_SIDEWAYS_FILTER_ON=False로 즉시 복귀.
+BTC_SIDEWAYS_FILTER_ON = True
+BTC_SIDEWAYS_BAND_PCT = 2.0     # 50일선 대비 ±2% 안이면 횡보로 판정
+BTC_SMA_DAYS = 50
+_btc_sma_cache = {"dev": None, "ts": 0}
+
+
+def btc_sma_deviation_pct() -> float | None:
+    """BTC 현재가가 50일 이동평균선에서 몇 % 떨어져 있는지(+위/-아래). 실패 시 None.
+    일봉 51개 조회(가벼움), 30분 캐시 — 50일 평균은 하루 안에 거의 안 변한다."""
+    now = time.time()
+    if _btc_sma_cache["dev"] is not None and now - _btc_sma_cache["ts"] < 1800:
+        return _btc_sma_cache["dev"]
+    try:
+        r = requests.get(f"{BASE}/api/v3/klines",
+                          params={"symbol": "BTCUSDT", "interval": "1d", "limit": BTC_SMA_DAYS + 1}, timeout=8)
+        if r.status_code != 200:
+            return _btc_sma_cache["dev"]
+        k = r.json()
+        if len(k) < BTC_SMA_DAYS:
+            return _btc_sma_cache["dev"]
+        closes = [float(x[4]) for x in k[-(BTC_SMA_DAYS + 1):-1]]   # 완결된 최근 50일봉 종가
+        cur = float(k[-1][4])                                       # 진행 중인 오늘봉 현재가
+        sma = sum(closes) / len(closes)
+        dev = (cur / sma - 1) * 100 if sma > 0 else None
+        if dev is not None:
+            _btc_sma_cache["dev"] = dev
+            _btc_sma_cache["ts"] = now
+        return dev
+    except Exception:
+        return _btc_sma_cache["dev"]
+
+
 def pump_6h(sym):
     """LOOKBACK_H시간 상승률 — 5분봉 LOOKBACK+1개 조회해 계산(함수명은 최초 6h 버전 잔재).
     (상승률, 현재가). 실패 시 (None, 0).
@@ -1085,6 +1125,16 @@ def main():
             if regime_blocked and now - last_regime_alert_ts > 1800:
                 log.info(f"변동장 감지(BTC 24h변동 {btc_vol:.2f}%>{BTC_VOL_THRESHOLD}%) — 신규진입 전면 보류")
                 last_regime_alert_ts = now
+            # ★ 2026-08-31: BTC 횡보장이면 신규진입 보류(근거는 BTC_SIDEWAYS_FILTER_ON 정의부).
+            #   조회 실패(None)는 차단하지 않는다 — 방향을 모른다고 진입을 막으면 API 장애 때
+            #   봇이 통째로 멈추는 셈이라, 확인된 횡보만 막는다(fail-open).
+            if not regime_blocked and BTC_SIDEWAYS_FILTER_ON:
+                _dev = btc_sma_deviation_pct()
+                if _dev is not None and abs(_dev) <= BTC_SIDEWAYS_BAND_PCT:
+                    regime_blocked = True
+                    if now - last_regime_alert_ts > 1800:
+                        log.info(f"BTC 횡보장(50일선 대비 {_dev:+.2f}%, ±{BTC_SIDEWAYS_BAND_PCT}% 이내) — 신규진입 보류")
+                        last_regime_alert_ts = now
             # ★ 2026-08-27: 상대 봇이 건 공유 블랙리스트를 이번 사이클 쿨다운에 반영
             for _s, _u in _load(SHARED_BLACKLIST_PATH, {}).items():
                 try: _u = float(_u)

@@ -1,48 +1,21 @@
-"""[조회] 보유 포지션 한눈에 보기 — 종목/방향/수익률/순익 간단 표시."""
+"""지금 실거래 봇들이 뭘 들고 있는지 한눈에 보여준다. 종목 추천이 아니라 현재 상태 조회용.
+사용법: .venv/Scripts/python.exe scripts/show_positions.py
+"""
 import sys, json
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from bithumb.binance_guard import _signed
 
-import requests
+r = _signed('GET', '/fapi/v2/positionRisk').json()
+open_pos = [p for p in r if float(p.get('positionAmt', 0)) != 0]
 
-ROOT = Path(__file__).resolve().parent.parent
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
-
-
-def price(sym):
-    r = requests.get("https://api.binance.com/api/v3/ticker/price", params={"symbol": sym}, timeout=5)
-    return float(r.json()["price"])
-
-
-def main():
-    rows = []
-
-    ms = ROOT / "data" / "margin_short_pos.json"
-    if ms.exists():
-        for sym, p in json.loads(ms.read_text(encoding="utf-8")).items():
-            cur = price(sym)
-            pnl_pct = (1 - cur / p["entry_price"]) * 100
-            pnl_usdt = p["margin"] * 2 * (pnl_pct / 100)
-            rows.append((p["coin"], "숏", pnl_pct, pnl_usdt))
-
-    ml = ROOT / "data" / "margin_manual_long_pos.json"
-    if ml.exists():
-        for coin, p in json.loads(ml.read_text(encoding="utf-8")).items():
-            cur = price(coin + "USDT")
-            pnl_pct = (cur / p["entry_price"] - 1) * 100
-            pnl_usdt = p["qty"] * (cur - p["entry_price"])
-            rows.append((coin, "롱", pnl_pct, pnl_usdt))
-
-    if not rows:
-        print("보유 포지션 없음")
-        return
-
-    print(f"{'종목':<8}{'방향':<6}{'수익률':>10}{'순익(USDT)':>14}")
-    for coin, direction, pct, usdt in rows:
-        print(f"{coin:<8}{direction:<6}{pct:>+9.1f}%{usdt:>+13.2f}")
-
-
-if __name__ == "__main__":
-    main()
+if not open_pos:
+    print("지금 열려 있는 선물 포지션 없음")
+else:
+    print(f"=== 지금 열려 있는 선물 포지션 {len(open_pos)}개 ===")
+    for p in open_pos:
+        amt = float(p['positionAmt'])
+        side = "숏" if amt < 0 else "롱"
+        entry = float(p['entryPrice']); mark = float(p['markPrice']); upnl = float(p['unRealizedProfit'])
+        pct = (mark/entry - 1) * 100 * (-1 if amt < 0 else 1)
+        print(f"  {p['symbol']:14s} {side}  진입 {entry:.6g} → 현재 {mark:.6g} ({pct:+.1f}%)  평가손익 {upnl:+.2f} USDT")

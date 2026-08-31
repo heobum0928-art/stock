@@ -396,6 +396,16 @@ BTC_SMA_DAYS = 50
 _btc_sma_cache = {"dev": None, "ts": 0}
 
 
+def _btc_sma_cached_or_none(now: float) -> float | None:
+    """실패 경로 공용: 캐시가 2시간 이내면 그 값을, 그보다 오래됐으면 None을 반환.
+    ★ 2026-08-31(버그헌터 발견): 원래는 실패 시 무조건 마지막 성공값을 돌려줘서, API가
+    계속 실패하면 몇 시간 전의 '횡보' 판정이 무기한 남아 신규진입을 계속 막을 수 있었다
+    (fail-open 의도 위반). 2시간 넘은 캐시는 버리고 None(=차단 안 함)으로 돌아간다."""
+    if _btc_sma_cache["dev"] is not None and now - _btc_sma_cache["ts"] < 7200:
+        return _btc_sma_cache["dev"]
+    return None
+
+
 def btc_sma_deviation_pct() -> float | None:
     """BTC 현재가가 50일 이동평균선에서 몇 % 떨어져 있는지(+위/-아래). 실패 시 None.
     일봉 51개 조회(가벼움), 30분 캐시 — 50일 평균은 하루 안에 거의 안 변한다."""
@@ -406,10 +416,10 @@ def btc_sma_deviation_pct() -> float | None:
         r = requests.get(f"{BASE}/api/v3/klines",
                           params={"symbol": "BTCUSDT", "interval": "1d", "limit": BTC_SMA_DAYS + 1}, timeout=8)
         if r.status_code != 200:
-            return _btc_sma_cache["dev"]
+            return _btc_sma_cached_or_none(now)
         k = r.json()
-        if len(k) < BTC_SMA_DAYS:
-            return _btc_sma_cache["dev"]
+        if len(k) < BTC_SMA_DAYS + 1:   # 51개 미만이면 완결 50봉+진행봉 구조가 안 맞음
+            return _btc_sma_cached_or_none(now)
         closes = [float(x[4]) for x in k[-(BTC_SMA_DAYS + 1):-1]]   # 완결된 최근 50일봉 종가
         cur = float(k[-1][4])                                       # 진행 중인 오늘봉 현재가
         sma = sum(closes) / len(closes)
@@ -419,7 +429,7 @@ def btc_sma_deviation_pct() -> float | None:
             _btc_sma_cache["ts"] = now
         return dev
     except Exception:
-        return _btc_sma_cache["dev"]
+        return _btc_sma_cached_or_none(now)
 
 
 def pump_6h(sym):
@@ -1141,9 +1151,12 @@ def main():
                 except Exception: continue
                 if _u > now and cooldown.get(_s, 0) < _u:
                     cooldown[_s] = _u
+            # ★ 2026-08-31(버그헌터 발견): 레짐 차단 시 루프를 통째로 break하면 신규상장
+            #   모의롱 기록(is_recent_listing 분기)까지 같이 끊긴다 — 횡보가 며칠 지속되면
+            #   그 기간 신규상장 리서치 표본이 0건이 된다(오늘 아침 CUSUM 순서버그와 같은
+            #   데이터 손실 클래스). break 대신 신호 탐지·신규상장 기록은 계속 돌리고,
+            #   실제 숏 진입 직전에만 차단한다(아래 is_recent_listing 분기 뒤의 continue).
             for coin in (UNIVERSE_SET | FUTURES_UNIVERSE):
-                if regime_blocked:
-                    break
                 sym = f"{coin}USDT"
                 t = tick.get(sym)
                 if not t: continue
@@ -1180,6 +1193,11 @@ def main():
                             "exit_ts": now + NEWLISTING_HOLD_H*3600,
                         }
                         log.info(f"[모의:신규상장롱] {sym} {LOOKBACK_H}h+{ret6h:.0f}% 신규상장 감지 → 숏 스킵, 모의롱 진입(실주문없음)")
+                    continue
+
+                # ★ 2026-08-31: 레짐 차단(변동장/횡보장)은 여기서 — 신규상장 모의롱 기록은
+                #   위에서 이미 끝났고, 이 아래는 실제 돈이 나가는 진입뿐이다.
+                if regime_blocked:
                     continue
 
                 if CUSUM_ENABLED:

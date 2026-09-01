@@ -175,6 +175,24 @@ def rebalance(s, target_frac, price, reason):
     return True
 
 
+def live_target_notional(target_frac):
+    """목표 명목노출(USDT). 실패 시 None. live_rebalance()와 동일 공식을 공유해
+    '유지' 분기의 실포지션 대조에서도 같은 기준을 쓰게 한다(2026-09-02 신설)."""
+    from bithumb.binance_guard import load_config
+    usdt = get_futures_usdt()
+    if usdt is None or usdt <= 0:
+        return None
+    cap = load_config().get("engine_caps_usdt", {}).get(ENGINE, 0)
+    return min(usdt, cap) * target_frac * LEVERAGE
+
+
+# ★ 2026-09-02(버그감사 지적, 사용자 승인 후 수정): '유지' 분기 실포지션 대조 허용오차.
+#   목표의 15% 또는 10 USDT 중 큰 값을 넘게 벌어져야 교정한다 — rebalance_long()의
+#   자체 스킵 문턱(5 USDT)보다 넉넉히 크게 잡아 매 사이클 진동하지 않게 한다.
+DRIFT_TOL_FRAC = 0.15
+DRIFT_TOL_USDT = 10.0
+
+
 def live_rebalance(guard, target_frac, price):
     """실전 모드 — 목표 명목노출까지 가드 통해 실주문.
     증거금 = min(선물잔고, 엔진상한) × target_frac. 명목 = 증거금 × LEVERAGE.
@@ -255,6 +273,25 @@ def main():
                     else:
                         log.info(f"[LIVE] 유지 {s['state']} | BTCUSDT {price:,.2f} | 실포지션 {pos['amt']:.4f}BTC "
                                  f"(명목 {pos['notional']:.1f}USDT, 미실현 {pos['unrealized']:+.2f})")
+                        # ★ 2026-09-02(사용자 승인 후 수정): 상태가 안 바뀌면 실포지션을 로그만
+                        #   찍고 대조하지 않던 버그. 사용자가 수동으로 판 뒤 봇은 계속 "FULL"이라
+                        #   믿으며 빈손으로 12일(2026-08-20~09-01)을 보냈고, 그 사이 BTC는 +12.7%
+                        #   올랐다(강세 조건은 8/20에 켜졌다). 이제 목표와 실제를 매 사이클 대조해
+                        #   허용오차를 넘으면 교정한다. 외부에서 늘어난 경우(캡 초과)도 같이 잡힌다.
+                        _tgt = live_target_notional(target_frac)
+                        if _tgt is None:
+                            log.warning("[LIVE] 잔고조회 실패 — 실포지션 대조 건너뜀(다음 루프 재시도)")
+                        else:
+                            _gap = abs(pos["notional"] - _tgt)
+                            _tol = max(_tgt * DRIFT_TOL_FRAC, DRIFT_TOL_USDT)
+                            if _gap > _tol:
+                                log.warning(f"[LIVE] ★실포지션 괴리 감지 — 목표 {_tgt:.1f} vs 실제 "
+                                            f"{pos['notional']:.1f} USDT (차 {_gap:.1f} > 허용 {_tol:.1f}) → 교정")
+                                try:
+                                    notify.send(f"🚨 [CORE-LEV] 실포지션 괴리 교정 — 목표 {_tgt:.0f} vs "
+                                                f"실제 {pos['notional']:.0f} USDT (상태 {s['state']} 유지)")
+                                except Exception: pass
+                                live_rebalance(guard, target_frac, price)
                         # ★ 2026-08-20(기록감사 발견): docstring이 약속한 "청산위험 70%
                         # 경보"가 모의(mark_to_market) 경로에만 구현돼 있었고, 정작 실제
                         # 돈이 걸린 실전 경로엔 없었다. 이 포지션은 서버측 손절도 없어서

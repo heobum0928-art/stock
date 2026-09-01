@@ -393,6 +393,13 @@ def btc_volatility_pct() -> float | None:
 BTC_SIDEWAYS_FILTER_ON = True
 BTC_SIDEWAYS_BAND_PCT = 2.0     # 50일선 대비 ±2% 안이면 횡보로 판정
 BTC_SMA_DAYS = 50
+
+# ★ 2026-09-01: 펀딩청산 — 진입 24h 시점에 펀딩비를 내는 중이면(펀딩레이트 합<0) 청산.
+#   실측 계기: 최근 3일 매매익 +48.34 중 펀딩비 -14.59(30%)가 새나감. 1년 백테스트
+#   짝비교 +1.256%p, 95%CI [+0.57,+2.01](0 배제), 훈련/홀드아웃 부호 일치.
+#   선물 포지션만 적용. 문제 시 False로 즉시 복귀.
+FUND_EXIT_ENABLED = True
+FUND_EXIT_AFTER_H = 24
 _btc_sma_cache = {"dev": None, "ts": 0}
 
 
@@ -462,6 +469,24 @@ CUSUM_THRESHOLD = 56.5      # 백테스트 상위10% 컷 그대로
 CUSUM_KLINES_LIMIT = 1000   # API 1회 한도(≈3.5일) — 백테스트는 최대 4일(1152봉) lookback을 썼으므로
                             # 완전히 동일하진 않다. 문턱값은 백테스트 그대로 가져온 근사치라, 실제
                             # 통과 빈도가 예상(주 1건)과 크게 다르면 로그를 보고 재조정이 필요하다.
+
+
+def funding_sum_since(sym, entry_ts: float) -> float | None:
+    """진입 이후 이 심볼의 펀딩레이트 합(공개 API, 인증 불필요). 실패 시 None.
+    바이낸스 관례: 레이트 양수 = 롱이 숏에게 지불(숏은 받음). 합<0이면 숏이 내는 중.
+    ★ 백테스트(research/m5bt fund/*.npz)와 동일한 잣대 — 실제 지불액이 아니라
+    레이트 부호 합으로 판정한다(포지션 크기와 무관, 방향만 본다)."""
+    try:
+        r = requests.get(f"{FAPI}/fapi/v1/fundingRate",
+                          params={"symbol": sym, "startTime": int(entry_ts * 1000), "limit": 100}, timeout=8)
+        if r.status_code != 200:
+            return None
+        rows = r.json()
+        if not isinstance(rows, list):
+            return None
+        return sum(float(x["fundingRate"]) for x in rows)   # 이벤트 0건이면 0.0(중립 → 청산 안 함)
+    except Exception:
+        return None
 
 
 def cusum_score(sym):
@@ -933,9 +958,34 @@ def main():
                     _save(POS_PATH, positions)
                 peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
                 trail_hit = TRAIL_ENABLED and peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
-                if not stop_hit and not trail_hit and now < pos["exit_ts"]:
+                # ★ 2026-09-01: 펀딩청산 — 진입 24h 시점에 이 포지션이 펀딩비를 "내는 중"
+                #   (진입 이후 펀딩레이트 합 < 0 = 숏이 몰려 숏이 롱에게 지불)이면 청산.
+                #   근거: 1년 2,399건 짝비교, 현행(무트레일 48h) 대비 +1.256%p,
+                #   95%CI [+0.57,+2.01], 훈련 +0.76/홀드아웃 +2.73%p 부호 일치
+                #   (docs/would_change_log.md 2026-09-01). 선물 포지션만 — 마진 경로는
+                #   펀딩비가 아니라 대출이자(항상 비용)라 이 규칙의 검증 범위 밖.
+                #   판정은 포지션당 1회만(백테스트도 24h 시점 단일 판정). 조회 실패 시
+                #   청산하지 않는다(확인 못 한 것을 '내는 중'으로 오판하지 않는다).
+                fund_exit_hit = False
+                if (FUND_EXIT_ENABLED and pos.get("live")
+                        and pos.get("venue", "margin") == "futures"
+                        and not pos.get("fund_checked")
+                        and now - pos.get("entry_ts", now) >= FUND_EXIT_AFTER_H * 3600):
+                    pos["fund_checked"] = True
+                    _fsum = funding_sum_since(sym, pos.get("entry_ts", now))
+                    if _fsum is not None:
+                        if _fsum < 0:
+                            fund_exit_hit = True
+                            log.info(f"{sym} 펀딩청산 발동 — 진입 후 {FUND_EXIT_AFTER_H}h 펀딩레이트 합 {_fsum:+.5f} < 0 (숏이 내는 중)")
+                        else:
+                            log.info(f"{sym} 펀딩체크 통과 — 펀딩레이트 합 {_fsum:+.5f} ≥ 0 (받는 중), 보유 지속")
+                    _save(POS_PATH, positions)
+                if not stop_hit and not trail_hit and not fund_exit_hit and now < pos["exit_ts"]:
                     continue
-                reason = f"스탑+{STOP_PCT:.0f}%" if stop_hit else (f"트레일링(최고{peak_pnl_pct:.0f}%→{cur_pnl_pct:.0f}%)" if trail_hit else f"{HOLD_H}h만기")
+                reason = (f"스탑+{STOP_PCT:.0f}%" if stop_hit
+                          else f"트레일링(최고{peak_pnl_pct:.0f}%→{cur_pnl_pct:.0f}%)" if trail_hit
+                          else f"펀딩청산({FUND_EXIT_AFTER_H:.0f}h)" if fund_exit_hit
+                          else f"{HOLD_H}h만기")
                 venue = pos.get("venue", "margin")   # 옛 포지션(필드 없음) = 마진으로 취급(원래 유일 경로였음)
                 if venue == "futures":
                     cres = fut_guard.close_short_futures(pos["coin"], stop_order_id=pos.get("stop_order_id"))

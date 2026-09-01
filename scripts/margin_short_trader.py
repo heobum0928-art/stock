@@ -222,18 +222,33 @@ NEWLISTING_POS_PATH = ROOT / "data" / "newlisting_long_paper_pos.json"
 NEWLISTING_TRADES_PATH = ROOT / "data" / "newlisting_long_paper_trades.csv"
 
 
+def _klines_any(sym: str, interval: str, limit: int):
+    """캔들 조회 — 현물 우선, 실패/미상장이면 선물(FAPI)로 폴백.
+    ★ 2026-09-01: 선물 전용 코인(347개)은 현물 캔들이 없어서 pump_6h·상장경과일·CUSUM이
+    전부 조용히 실패했다(all_tickers 주석 참조). 반환: 캔들 리스트 또는 None."""
+    for base_url, path in ((BASE, "/api/v3/klines"), (FAPI, "/fapi/v1/klines")):
+        try:
+            r = requests.get(f"{base_url}{path}", params={"symbol": sym, "interval": interval, "limit": limit}, timeout=10)
+            if r.status_code == 200:
+                k = r.json()
+                if isinstance(k, list) and k:
+                    return k
+        except Exception:
+            pass
+    return None
+
+
 def _listing_age_days(coin: str, cache: dict) -> float | None:
-    """스팟 일봉 캔들 개수로 상장 이후 경과일 역산(바이낸스에 직접적인 상장일 필드가 없음).
-    캐시 TTL 7일(경과일은 단조증가라 자주 다시 조회할 필요 없음)."""
+    """일봉 캔들 개수로 상장 이후 경과일 역산(바이낸스에 직접적인 상장일 필드가 없음).
+    캐시 TTL 7일(경과일은 단조증가라 자주 다시 조회할 필요 없음).
+    ★ 2026-09-01: 선물 전용 코인도 잡히도록 _klines_any 사용 — 이전엔 현물 캔들만 봐서
+    선물 전용 신규상장이 '나이 미상'으로 빠져 상장빔 숏 회피 규칙이 작동하지 않았다."""
     now = time.time()
     c = cache.get(coin)
     if c and now - c.get("ts", 0) < 7*24*3600:
         return c.get("age_days")
-    try:
-        r = requests.get(f"{BASE}/api/v3/klines", params={"symbol": f"{coin}USDT", "interval": "1d", "limit": 1000}, timeout=10)
-        n = len(r.json()) if r.status_code == 200 else None
-    except Exception:
-        n = None
+    k = _klines_any(f"{coin}USDT", "1d", 1000)
+    n = len(k) if k is not None else None
     if n is not None:
         cache[coin] = {"age_days": n, "ts": now}
     return n
@@ -328,7 +343,12 @@ def _save(p, o):
 
 
 def all_tickers():
-    """전 심볼의 현재가 + 24h 변동률 + 24h 거래대금 (유동성 필터·1차 스크리닝용)."""
+    """전 심볼의 현재가 + 24h 변동률 + 24h 거래대금 (유동성 필터·1차 스크리닝용).
+    ★ 2026-09-01(중대 발견): 현물 티커만 쓰면 **선물 전용 상장 코인(실측 704개 중 347개,
+    절반)이 스캔에서 통째로 빠진다** — 이틀간 신호(FLOCK/SKR/USELESS, SKR은 24h 거래대금
+    10억 USDT)가 봇에 아예 안 보였던 원인. 백테스트(research/m5bt)는 선물 데이터 기준이라
+    이 코인들이 포함돼 있으므로, 이건 백테스트↔실전 유니버스 불일치이기도 하다.
+    현물에 없는 심볼은 선물 티커로 보충한다(현물 상장 코인은 기존과 동일하게 현물 우선)."""
     r = requests.get(f"{BASE}/api/v3/ticker/24hr", timeout=15)
     r.raise_for_status()
     out = {}
@@ -337,6 +357,18 @@ def all_tickers():
             out[x["symbol"]] = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
         except Exception:
             pass
+    try:
+        rf = requests.get(f"{FAPI}/fapi/v1/ticker/24hr", timeout=15)
+        if rf.status_code == 200:
+            for x in rf.json():
+                sym = x.get("symbol", "")
+                if sym not in out:
+                    try:
+                        out[sym] = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
+                    except Exception:
+                        pass
+    except Exception as e:
+        log.warning(f"선물 티커 보충 실패({e}) — 이번 사이클은 현물 상장 코인만 스캔")
     return out
 
 
@@ -444,10 +476,8 @@ def pump_6h(sym):
     (상승률, 현재가). 실패 시 (None, 0).
     ★ 이 시간대는 24h와 달리 API가 바로 안 주므로 klines 계산 필요. 후보에만 호출(1차 스크리닝 통과분)."""
     try:
-        r = requests.get(f"{BASE}/api/v3/klines", params={"symbol": sym, "interval": "5m", "limit": LOOKBACK + 1}, timeout=8)
-        if r.status_code != 200: return None, 0
-        k = r.json()
-        if len(k) < LOOKBACK + 1: return None, 0
+        k = _klines_any(sym, "5m", LOOKBACK + 1)   # ★ 2026-09-01: 선물 전용 코인 폴백 포함
+        if k is None or len(k) < LOOKBACK + 1: return None, 0
         past = float(k[0][4]); cur = float(k[-1][4])
         if past <= 0: return None, 0
         return (cur / past - 1) * 100, cur
@@ -492,10 +522,8 @@ def funding_sum_since(sym, entry_ts: float) -> float | None:
 def cusum_score(sym):
     """CUSUM(누적 이상변동) 점수. 실패 시 None."""
     try:
-        r = requests.get(f"{BASE}/api/v3/klines",
-                          params={"symbol": sym, "interval": "5m", "limit": CUSUM_KLINES_LIMIT}, timeout=8)
-        if r.status_code != 200: return None
-        k = r.json()
+        k = _klines_any(sym, "5m", CUSUM_KLINES_LIMIT)   # ★ 2026-09-01: 선물 전용 코인 폴백 포함
+        if k is None: return None
         n = len(k)
         if n < CUSUM_VOLWIN + 10: return None
         c = np.array([float(x[4]) for x in k])

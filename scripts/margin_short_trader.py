@@ -865,8 +865,26 @@ def main():
                         try: notify.send(f"🔎 {venue_tag}숏 외부청산 감지 {sym} — 봇이 아닌 경로로 청산됨. "
                                          f"pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT) 기록 완료, 슬롯 반환")
                         except Exception: pass
-                        _st = _load(STRIKES_PATH, {}); _st[pos["coin"]] = 0
-                        _save(STRIKES_PATH, _st)   # 공유 카운터 — 매번 다시 읽고 쓴다
+                        # ★ 2026-09-01(버그감사 3위 수정): 청산가가 손절선 부근(-STOP_PCT+2%p 이내)이면
+                        #   서버측 스탑 체결로 간주해 스트라이크를 올린다 — 무조건 리셋은 블랙리스트를
+                        #   무력화했다(상세는 margin_short_wide_trader.py 동일 수정 주석).
+                        _st = _load(STRIKES_PATH, {})
+                        _ck = pos["coin"]
+                        if pnl_pct <= -(STOP_PCT - 2):
+                            _st[_ck] = _st.get(_ck, 0) + 1
+                            _save(STRIKES_PATH, _st)
+                            if _st[_ck] >= 2:
+                                _until = now + STRIKE_BLACKLIST_H * 3600
+                                cooldown[sym] = _until
+                                _bl = _load(SHARED_BLACKLIST_PATH, {})
+                                _bl[sym] = max(float(_bl.get(sym, 0)), _until)
+                                _save(SHARED_BLACKLIST_PATH, _bl)
+                                log.warning(f"★{_ck} 연속 {_st[_ck]}회 스탑(외부청산 경유 포함) → 7일 블랙리스트")
+                                try: notify.send(f"⛔ {_ck} 연속 {_st[_ck]}회 손절 — 7일간 신규진입 제외")
+                                except Exception: pass
+                        else:
+                            _st[_ck] = 0
+                            _save(STRIKES_PATH, _st)   # 공유 카운터 — 매번 다시 읽고 쓴다
                         followup_register(sym, xpx, pnl_pct * lev, "외부청산", lev)
                         del positions[sym]
                         _save(POS_PATH, positions)

@@ -234,6 +234,45 @@ NEWLISTING_POS_PATH = ROOT / "data" / "newlisting_long_paper_wide_pos.json"
 NEWLISTING_TRADES_PATH = ROOT / "data" / "newlisting_long_paper_wide_trades.csv"
 
 
+# ★ 2026-09-02: BTC 강세장 진입보류 필터(사용자 제안 → 검증 후 채택).
+#   검증(완화봇 신호셋, CUSUM 상위10% 적용 상태에서의 증분):
+#     현행 CUSUM만        n=883  +3.55%  95%CI [+0.72,+6.39]
+#     +강세제외           n=808  +4.18%  95%CI [+1.32,+6.95]  ← 평균·CI 둘 다 개선
+#     제외되는 강세 신호   n= 75  -3.24%                      ← 실제로 나쁜 구간
+#   훈련 +3.90% / 홀드아웃 +5.06%로 부호·크기 모두 일관. 거래는 8%만 감소.
+#   ★ 원본봇(30~40% 신호셋)에는 적용하지 않는다 — 같은 검정에서 훈련 +0.32% /
+#     홀드아웃 -7.31%로 부호가 엇갈려 노이즈로 판정됐다.
+#   ★ 적용 시점 BTC 30일 수익률 +22.0%로 이미 문턱을 넘어 있다 = 당분간 신규진입 0건.
+#     이는 부작용이 아니라 이 필터의 의도된 동작이다(사용자가 그 점을 알고 선택).
+BTC_BULL_SKIP_ON = True
+BTC_BULL_30D_PCT = 10.0
+_btc_30d_cache = {"pct": None, "ts": 0}
+
+
+def btc_30d_return_pct():
+    """BTC 30일 수익률(%). 실패 시 None(=차단하지 않음, fail-open).
+    일봉 31개 조회, 30분 캐시 — 30일 수익률은 그 사이 거의 안 변한다."""
+    now = time.time()
+    if _btc_30d_cache["pct"] is not None and now - _btc_30d_cache["ts"] < 1800:
+        return _btc_30d_cache["pct"]
+    try:
+        r = requests.get(f"{BASE}/api/v3/klines",
+                          params={"symbol": "BTCUSDT", "interval": "1d", "limit": 31}, timeout=8)
+        if r.status_code != 200:
+            return _btc_30d_cache["pct"] if now - _btc_30d_cache["ts"] < 7200 else None
+        k = r.json()
+        if len(k) < 31:
+            return _btc_30d_cache["pct"] if now - _btc_30d_cache["ts"] < 7200 else None
+        past = float(k[0][4]); cur = float(k[-1][4])
+        if past <= 0:
+            return None
+        pct = (cur / past - 1) * 100
+        _btc_30d_cache["pct"] = pct; _btc_30d_cache["ts"] = now
+        return pct
+    except Exception:
+        return _btc_30d_cache["pct"] if now - _btc_30d_cache["ts"] < 7200 else None
+
+
 def _klines_any(sym: str, interval: str, limit: int):
     """캔들 조회 — 현물 우선, 실패/미상장이면 선물(FAPI)로 폴백.
     ★ 2026-09-01: 선물 전용 코인(347개)은 현물 캔들이 없어서 pump_6h·상장경과일이
@@ -1158,15 +1197,26 @@ def main():
             if regime_blocked and now - last_regime_alert_ts > 1800:
                 log.info(f"변동장 감지(BTC 24h변동 {btc_vol:.2f}%>{BTC_VOL_THRESHOLD}%) — 신규진입 전면 보류")
                 last_regime_alert_ts = now
+            # ★ 2026-09-02: BTC 강세장이면 신규진입 보류(근거는 BTC_BULL_SKIP_ON 정의부).
+            #   조회 실패(None)는 차단하지 않는다 — 확인 못 한 것으로 거래를 막지 않는다.
+            if not regime_blocked and BTC_BULL_SKIP_ON:
+                _b30 = btc_30d_return_pct()
+                if _b30 is not None and _b30 > BTC_BULL_30D_PCT:
+                    regime_blocked = True
+                    if now - last_regime_alert_ts > 1800:
+                        log.info(f"[완화] BTC 강세장(30일 {_b30:+.1f}% > {BTC_BULL_30D_PCT}%) — 신규진입 보류")
+                        last_regime_alert_ts = now
             # ★ 2026-08-27: 상대 봇이 건 공유 블랙리스트를 이번 사이클 쿨다운에 반영
             for _s, _u in _load(SHARED_BLACKLIST_PATH, {}).items():
                 try: _u = float(_u)
                 except Exception: continue
                 if _u > now and cooldown.get(_s, 0) < _u:
                     cooldown[_s] = _u
+            # ★ 2026-09-02(버그헌터 사전경고 반영): 레짐 차단 시 루프를 break하면 신규상장
+            #   모의롱 기록(is_recent_listing 분기)까지 끊긴다 — 원본봇에서 08-31에 고친 것과
+            #   같은 데이터 손실. 완화봇은 그때 레짐필터가 꺼져 있어 죽은 코드였으나, 오늘
+            #   강세장 필터를 켜면서 살아나므로 같이 고친다. break 대신 진입 직전 continue.
             for coin in (UNIVERSE_SET | FUTURES_UNIVERSE):
-                if regime_blocked:
-                    break
                 sym = f"{coin}USDT"
                 t = tick.get(sym)
                 if not t: continue
@@ -1212,6 +1262,11 @@ def main():
                 #   실제 돈이 나가는 진입만 막는다(근거는 NEW_ENTRY_ENABLED 정의부 주석).
                 if not NEW_ENTRY_ENABLED:
                     log.info(f"[완화] 신규진입 차단 중 — {sym}({LOOKBACK_H}h+{ret6h:.0f}%) 스킵")
+                    continue
+
+                # ★ 2026-09-02: 레짐 차단(변동장/BTC강세장)은 여기서 — 위쪽 신규상장 모의롱
+                #   기록은 이미 끝났고, 이 아래는 실제 돈이 나가는 진입뿐이다.
+                if regime_blocked:
                     continue
 
                 if CUSUM_ENABLED:

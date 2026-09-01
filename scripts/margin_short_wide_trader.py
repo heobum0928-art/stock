@@ -164,6 +164,11 @@ FOLLOWUP_PATH = ROOT / "data" / "margin_short_wide_followup.json"
 #      그럼에도 실행 방식 변경이므로 51건 판정문에 이 사실을 명시할 것.
 #   문제 발생 시 이 값을 False 로 되돌리고 봇 재시작하면 즉시 이전 동작으로 복귀한다.
 SERVER_STOP_MARGIN = True
+# ★ 2026-09-02 사용자 지시로 트레일링 OFF(원본봇과 통일). 원본봇과 달리 완화봇 신호셋에선
+#   트레일링 제거의 효과가 사실상 0이다 — 전체 신호 짝차이 +0.02%p(2026-08-31 wide_v1_bt.py),
+#   CUSUM+강세제외 부분집합에서도 ON +4.18% vs OFF +4.10%로 노이즈 수준. 즉 성과 근거가
+#   아니라 두 봇의 청산규칙을 같게 유지하려는 일관성 목적의 변경이다. 되돌리려면 True로.
+TRAIL_ENABLED = False
 TRAIL_TRIGGER_PCT = 15.0  # ★ 2026-08-10: 최유리(가격하락) 15%p 이상 찍으면 트레일링 무장
 TRAIL_GIVEBACK_PCT = 10.0  # 그 최고점에서 10%p 반납하면 즉시 청산(48h/스탑 기다리지 않음)
 COOLDOWN_H = 12           # 코인당 재진입 쿨다운
@@ -192,7 +197,7 @@ MARGIN_PER_TRADE = 50.0  # 증거금(상한과 동일). 실제 사용은 min(잔
 #   손절 1건 손실 -24→-40 USDT. 같은 날 binance_live_config.json의
 #   daily_loss_limit_usdt도 100→200으로 함께 올렸다.
 #   → 엔진캡 350 기준 동시 11건 → 7건.
-FUT_MARGIN_PER_TRADE = 50.0
+FUT_MARGIN_PER_TRADE = 80.0
 
 # ★ 2026-08-26: 마진 담보비율 경보 단계. 1.3 강제청산 / 1.5 신규진입 차단(margin_guard._gate).
 ML_ALERT_LEVELS = [2.0, 1.7, 1.5, 1.4]
@@ -950,7 +955,7 @@ def main():
                     except Exception: pass
                     _save(POS_PATH, positions)
                 peak_pnl_pct = (1 - pos["mfe_price"]/pos["entry_price"]) * 100
-                trail_hit = peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
+                trail_hit = TRAIL_ENABLED and peak_pnl_pct >= TRAIL_TRIGGER_PCT and cur_pnl_pct <= peak_pnl_pct - TRAIL_GIVEBACK_PCT
                 if not stop_hit and not trail_hit and now < pos["exit_ts"]:
                     continue
                 reason = f"스탑+{STOP_PCT:.0f}%" if stop_hit else (f"트레일링(최고{peak_pnl_pct:.0f}%→{cur_pnl_pct:.0f}%)" if trail_hit else f"{HOLD_H}h만기")

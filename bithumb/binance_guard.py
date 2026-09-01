@@ -382,7 +382,8 @@ class BinanceGuard:
             return {"skip": True, "reason": "수량 0"}
         try:
             r = _signed("POST", "/fapi/v1/order",
-                        {"symbol": SYMBOL, "side": side, "type": "MARKET", "quantity": qty})
+                        {"symbol": SYMBOL, "side": side, "type": "MARKET", "quantity": qty,
+                         "newOrderRespType": "RESULT"})   # ★ 2026-09-01: ACK 응답의 0값 오염 방지
             res = r.json()
             if r.status_code != 200:
                 log.error(f"[{self.engine}] ★주문실패 {side} {qty} → {res}")
@@ -522,7 +523,8 @@ class BinanceGuard:
             log.warning(f"[{self.engine}] 레버리지 설정 실패({sym}): {e}")
         try:
             r = _signed("POST", "/fapi/v1/order",
-                        {"symbol": sym, "side": "SELL", "type": "MARKET", "quantity": qty})
+                        {"symbol": sym, "side": "SELL", "type": "MARKET", "quantity": qty,
+                         "newOrderRespType": "RESULT"})
             res = r.json()
             if r.status_code != 200:
                 log.error(f"[{self.engine}] ★선물숏진입 실패 {sym} {qty} → {res}")
@@ -532,10 +534,25 @@ class BinanceGuard:
             log.error(f"[{self.engine}] 선물숏진입 예외: {e}")
             self._ledger("open_short_fut", qty, notional, f"ERR:{e}")
             return {"error": str(e)}
-        fill_qty = float(res.get("executedQty", qty))
-        # ★ 2026-07-22(감사 발견, margin_guard.py open_short와 동일 수정): 선물 시장가 주문 응답의
-        #   avgPrice(실제 평균체결가)를 우선 사용, 없거나 0이면 호가로 폴백.
-        fill_price = float(res.get("avgPrice", 0) or 0) or price
+        # ★ 2026-09-01(버그헌터 감사 1위 수정): 기본 응답(ACK)은 executedQty/avgPrice가 "0"으로
+        #   와서 float(res.get("executedQty", qty))가 0.0이 됐다(기본값은 키가 아예 없을 때만
+        #   적용됨) — 포지션 수량이 0으로 기록되고(현재 열린 4개 중 3개가 그 상태였음),
+        #   진입가는 주문 전 마크가로 오염돼 서버측 스탑가(진입가×1.4)까지 틀어졌다.
+        #   newOrderRespType=RESULT로 체결 확정 응답을 요구하고, 그래도 0이면 주문 조회로
+        #   실체결값을 재확인한다. 최후 폴백은 기존과 동일(qty·호가).
+        fill_qty = float(res.get("executedQty") or 0)
+        fill_price = float(res.get("avgPrice") or 0)
+        if fill_qty <= 0 or fill_price <= 0:
+            try:
+                q = _signed("GET", "/fapi/v1/order", {"symbol": sym, "orderId": res.get("orderId")})
+                if q.status_code == 200:
+                    qd = q.json()
+                    if fill_qty <= 0: fill_qty = float(qd.get("executedQty") or 0)
+                    if fill_price <= 0: fill_price = float(qd.get("avgPrice") or 0)
+            except Exception as e:
+                log.warning(f"[{self.engine}] 체결확인 조회 실패 {sym}: {e}")
+        if fill_qty <= 0: fill_qty = qty
+        if fill_price <= 0: fill_price = price
         log.warning(f"[{self.engine}] ★선물숏진입(마진대출폴백) {sym} {fill_qty} (명목 {notional:.1f} USDT) @~{fill_price:.6g}(호가{price:.6g})")
         self._ledger("open_short_fut", fill_qty, notional, res)
         out = {"live": True, "qty": fill_qty, "entry_usdt": margin_usdt, "price": fill_price, "result": res}
@@ -579,7 +596,8 @@ class BinanceGuard:
         try:
             r = _signed("POST", "/fapi/v1/order",
                         {"symbol": sym, "side": "BUY", "type": "MARKET", "quantity": qty,
-                         "reduceOnly": "true"})
+                         "reduceOnly": "true",
+                         "newOrderRespType": "RESULT"})   # ★ 2026-09-01: ACK 응답의 0값 오염 방지
             res = r.json()
             if r.status_code != 200:
                 log.error(f"[{self.engine}] ★선물숏청산 실패 {sym} {qty} → {res}")

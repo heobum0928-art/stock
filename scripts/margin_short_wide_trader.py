@@ -356,14 +356,26 @@ def all_tickers():
         if rf.status_code == 200:
             for x in rf.json():
                 sym = x.get("symbol", "")
-                if sym not in out:
-                    try:
-                        out[sym] = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
-                    except Exception:
-                        pass
+                try:
+                    row = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
+                except Exception:
+                    continue
+                cur = out.get(sym)
+                # ★ 2026-09-01(버그헌터): 좀비 현물티커(상폐 후 얼린 값)와 현물이 죽은
+                #   이중상장을 피하려고 거래대금 큰 쪽 우선 — margin_short_trader.py와 동일.
+                if cur is None or row[2] > cur[2]:
+                    out[sym] = row
     except Exception as e:
         log.warning(f"선물 티커 보충 실패({e}) — 이번 사이클은 현물 상장 코인만 스캔")
     return out
+
+
+def _alias_syms(sym: str) -> set:
+    """같은 기초자산의 별칭 심볼 집합 — 1000PEPEUSDT ↔ PEPEUSDT (상세는 margin_short_trader.py)."""
+    coin = sym[:-4] if sym.endswith("USDT") else sym
+    if coin.startswith("1000") and len(coin) > 4:
+        return {sym, f"{coin[4:]}USDT"}
+    return {sym, f"1000{coin}USDT"}
 
 
 BTC_VOL_THRESHOLD = 3.26  # ★ 2026-08-07: 155건 백테스트 레짐분석 — BTC 24h 변동폭 중앙값(3.26%)
@@ -1119,7 +1131,8 @@ def main():
                 if not t: continue
                 px, chg24, qvol = t
                 if px <= 0 or qvol < MIN_QUOTE_VOL: continue
-                if sym in positions or cooldown.get(sym, 0) > now:
+                _aliases = _alias_syms(sym)   # 1000PEPE ↔ PEPE 같은 기초자산 별칭 포함 검사
+                if any(a in positions for a in _aliases) or any(cooldown.get(a, 0) > now for a in _aliases):
                     continue
                 # ★ 2026-08-25: 원본 봇(margin_short_trader)이 같은 코인을 이미 들고 있으면
                 #   건너뛴다 — 진입범위가 15~30% vs 30~40%로 안 겹치게 설계했지만, 시점 차이로
@@ -1127,7 +1140,7 @@ def main():
                 #   20%대까지 내려왔다가 다시 반등). 한 코인에 두 엔진이 동시에 숏을 얹는 걸 막는다.
                 if other_pos is None:
                     continue
-                if sym in other_pos:
+                if any(a in other_pos for a in _aliases):
                     continue
                 if chg24 < PRESCREEN_24H:      # 1차 스크리닝 (klines 조회 절약)
                     continue

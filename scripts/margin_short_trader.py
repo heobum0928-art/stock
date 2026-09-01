@@ -362,14 +362,34 @@ def all_tickers():
         if rf.status_code == 200:
             for x in rf.json():
                 sym = x.get("symbol", "")
-                if sym not in out:
-                    try:
-                        out[sym] = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
-                    except Exception:
-                        pass
+                try:
+                    row = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
+                except Exception:
+                    continue
+                cur = out.get(sym)
+                # ★ 2026-09-01(버그헌터 발견): 단순 '현물 우선'은 두 구멍을 남긴다 —
+                #   ① 상폐된 현물 심볼(XMR·LIT)은 바이낸스가 마지막 날 통계를 얼려 계속
+                #     반환하므로, 살아있는 선물 시장(XMR 선물 24h 1.27억 USDT)이 얼린
+                #     좀비 값에 영구히 가려진다. ② 현물 거래가 죽고 선물만 활발한 이중상장
+                #     96종도 현물 qvol로 판정돼 백테스트(선물 데이터)와 어긋난다.
+                #   → 거래대금이 더 큰 쪽을 쓴다(좀비는 얼린 소액이라 자동으로 선물이 이김).
+                if cur is None or row[2] > cur[2]:
+                    out[sym] = row
     except Exception as e:
         log.warning(f"선물 티커 보충 실패({e}) — 이번 사이클은 현물 상장 코인만 스캔")
     return out
+
+
+def _alias_syms(sym: str) -> set:
+    """같은 기초자산의 별칭 심볼 집합 — 1000PEPEUSDT ↔ PEPEUSDT.
+    ★ 2026-09-01(버그헌터 발견): 선물 티커 보충으로 1000x 접두 선물심볼(1000PEPE 등
+    5종)이 스캔에 새로 들어오면서, 같은 코인 급등에 마진 PEPE 숏 + 선물 1000PEPE 숏이
+    동시에 나갈 수 있게 됐다(쿨다운·겹침 체크가 전부 문자열 키라 서로 못 알아봄).
+    포지션·쿨다운·상대봇 겹침 검사에 이 별칭 집합을 쓴다."""
+    coin = sym[:-4] if sym.endswith("USDT") else sym
+    if coin.startswith("1000") and len(coin) > 4:
+        return {sym, f"{coin[4:]}USDT"}
+    return {sym, f"1000{coin}USDT"}
 
 
 BTC_VOL_THRESHOLD = 3.26  # ★ 2026-08-07: 155건 백테스트 레짐분석 — BTC 24h 변동폭 중앙값(3.26%)
@@ -1250,13 +1270,14 @@ def main():
                 if not t: continue
                 px, chg24, qvol = t
                 if px <= 0 or qvol < MIN_QUOTE_VOL: continue
-                if sym in positions or cooldown.get(sym, 0) > now:
+                _aliases = _alias_syms(sym)   # 1000PEPE ↔ PEPE 같은 기초자산 별칭 포함 검사
+                if any(a in positions for a in _aliases) or any(cooldown.get(a, 0) > now for a in _aliases):
                     continue
                 # ★ 2026-08-25: 완화판 봇이 같은 코인을 들고 있으면 스킵(상세는 OTHER_ENGINE_POS_PATH 주석).
                 #   읽기 실패를 조용히 통과시키지 않는다 — 못 읽으면 겹침 위험을 알 수 없으므로 보수적으로 스킵.
                 if other_pos is None:
                     continue
-                if sym in other_pos:
+                if any(a in other_pos for a in _aliases):
                     continue
                 if chg24 < PRESCREEN_24H:      # 1차 스크리닝 (klines 조회 절약)
                     continue

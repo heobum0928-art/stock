@@ -966,20 +966,30 @@ def main():
                 #   펀딩비가 아니라 대출이자(항상 비용)라 이 규칙의 검증 범위 밖.
                 #   판정은 포지션당 1회만(백테스트도 24h 시점 단일 판정). 조회 실패 시
                 #   청산하지 않는다(확인 못 한 것을 '내는 중'으로 오판하지 않는다).
+                # ★ 2026-09-01(버그헌터 발견 후 재설계): 판정 결과를 일회성 지역변수가 아니라
+                #   pos["fund_exit_due"]로 영속화한다 — 그래야 청산주문이 실패해도 다음 사이클에
+                #   재시도된다(원래 코드는 fund_checked만 남아 청산 1회 실패 시 영구 포기 + 스탑
+                #   선취소와 겹치면 무보호까지 갔다). 조회 실패(None)는 fund_checked를 세우지 않고
+                #   로그만 남긴다 — 다음 사이클에 다시 조회한다(일시 장애로 규칙이 꺼지지 않게).
                 fund_exit_hit = False
                 if (FUND_EXIT_ENABLED and pos.get("live")
                         and pos.get("venue", "margin") == "futures"
-                        and not pos.get("fund_checked")
                         and now - pos.get("entry_ts", now) >= FUND_EXIT_AFTER_H * 3600):
-                    pos["fund_checked"] = True
-                    _fsum = funding_sum_since(sym, pos.get("entry_ts", now))
-                    if _fsum is not None:
-                        if _fsum < 0:
-                            fund_exit_hit = True
-                            log.info(f"{sym} 펀딩청산 발동 — 진입 후 {FUND_EXIT_AFTER_H}h 펀딩레이트 합 {_fsum:+.5f} < 0 (숏이 내는 중)")
+                    if pos.get("fund_exit_due"):
+                        fund_exit_hit = True   # 이전 판정 유지 — 청산 성공할 때까지 매 사이클 재시도
+                    elif not pos.get("fund_checked"):
+                        _fsum = funding_sum_since(sym, pos.get("entry_ts", now))
+                        if _fsum is None:
+                            log.warning(f"{sym} 펀딩청산 판정 조회 실패 — 다음 사이클 재시도")
                         else:
-                            log.info(f"{sym} 펀딩체크 통과 — 펀딩레이트 합 {_fsum:+.5f} ≥ 0 (받는 중), 보유 지속")
-                    _save(POS_PATH, positions)
+                            pos["fund_checked"] = True
+                            if _fsum < 0:
+                                pos["fund_exit_due"] = True
+                                fund_exit_hit = True
+                                log.info(f"{sym} 펀딩청산 발동 — 진입 후 {FUND_EXIT_AFTER_H}h 펀딩레이트 합 {_fsum:+.5f} < 0 (숏이 내는 중)")
+                            else:
+                                log.info(f"{sym} 펀딩체크 통과 — 펀딩레이트 합 {_fsum:+.5f} ≥ 0 (받는 중), 보유 지속")
+                            _save(POS_PATH, positions)
                 if not stop_hit and not trail_hit and not fund_exit_hit and now < pos["exit_ts"]:
                     continue
                 reason = (f"스탑+{STOP_PCT:.0f}%" if stop_hit

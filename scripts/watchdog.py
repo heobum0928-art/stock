@@ -344,13 +344,29 @@ def start_bot(name: str, script: Path) -> subprocess.Popen:
     return proc
 
 
+def _tree_cpu_seconds(pid: int) -> float | None:
+    """프로세스 트리(부모+모든 자손) CPU 누적초 합. 조회 불가 시 None.
+    ★ 2026-09-01(버그헌터 감사 2위 수정): 봇은 런처 패턴이라 proc.pid(부모 스텁)는
+    자식을 기다리기만 해서 CPU가 거의 안 는다 — 부모만 재면 **일 잘 하는 봇이 매번
+    행상태로 오판**돼 강제재시작됐다(누적 1만회+, 청산지연 실사례 2건). 자식까지 합산."""
+    try:
+        p = psutil.Process(pid)
+        total = 0.0
+        for pr in [p] + p.children(recursive=True):
+            try:
+                c = pr.cpu_times()
+                total += c.user + c.system
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        return total
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return None
+
+
 def _reset_hang_tracking(name: str, proc: subprocess.Popen, now: float) -> None:
     """새로 시작/재시작한 프로세스의 행상태 추적을 초기화. start_bot() 직후 항상 호출."""
-    try:
-        cpu = psutil.Process(proc.pid).cpu_times()
-        _last_cpu_time[name] = cpu.user + cpu.system
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        _last_cpu_time[name] = 0.0
+    cpu = _tree_cpu_seconds(proc.pid)
+    _last_cpu_time[name] = cpu if cpu is not None else 0.0
     _last_active_ts[name] = now
 
 
@@ -369,13 +385,13 @@ HANG_CPU_EPSILON = 0.05   # ★ 2026-07-26 배포 당일 발견: cur > prev(증�
 def _check_hang(name: str, proc: subprocess.Popen, now: float) -> bool:
     """CPU 누적시간이 HANG_CHECK_SEC 동안 HANG_CPU_EPSILON(현재 0.05초)+ 안 늘면 True(행상태로 판단).
     proc.poll()로는 못 잡는, 살아있지만 멈춘 프로세스 감지용(2026-07-26 신설, 상세는 상단 주석)."""
-    try:
-        cpu = psutil.Process(proc.pid).cpu_times()
-        cur = cpu.user + cpu.system
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    cur = _tree_cpu_seconds(proc.pid)   # ★ 2026-09-01: 부모+자식 트리 합산(상세는 _tree_cpu_seconds)
+    if cur is None:
         return False  # 조회 자체가 안 되면 판단 보류(죽었으면 다음 사이클에 poll()이 잡음)
     prev = _last_cpu_time.get(name)
-    if prev is None or cur - prev >= HANG_CPU_EPSILON:
+    # cur < prev = 자식이 죽고 새로 떠서 트리 CPU 합이 줄어든 경우 — 그것 자체가 활동이므로
+    # 진행으로 인정하고 기준선을 재설정한다(안 하면 행 타이머가 계속 흘러 오판 강제킬).
+    if prev is None or cur - prev >= HANG_CPU_EPSILON or cur < prev:
         _last_cpu_time[name] = cur
         _last_active_ts[name] = now
         return False

@@ -17,8 +17,14 @@ from bithumb.binance_guard import _signed
 
 
 def price(sym):
+    """현물 가격, 없으면 선물 폴백. ★ 2026-09-01: 선물 전용 코인(SKR 등 347개)이
+    유니버스에 들어오면서 현물 조회가 -1121로 실패('price' 키 없음) → /상태 전체가
+    죽었다. 선물 티커로 폴백."""
     r = requests.get("https://api.binance.com/api/v3/ticker/price", params={"symbol": sym}, timeout=5)
-    return float(r.json()["price"])
+    d = r.json()
+    if "price" in d:
+        return float(d["price"])
+    return _futures_price(sym)
 
 
 def _futures_price(sym):

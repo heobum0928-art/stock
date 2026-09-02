@@ -415,6 +415,7 @@ def all_tickers():
             out[x["symbol"]] = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
         except Exception:
             pass
+    spot_only = dict(out)   # ★ 2026-09-02: 현물 원본 보관(마진 판정 전용)
     try:
         rf = requests.get(f"{FAPI}/fapi/v1/ticker/24hr", timeout=15)
         if rf.status_code == 200:
@@ -431,7 +432,10 @@ def all_tickers():
                     out[sym] = row
     except Exception as e:
         log.warning(f"선물 티커 보충 실패({e}) — 이번 사이클은 현물 상장 코인만 스캔")
-    return out
+    # ★★ 2026-09-02(버그헌터 B3·B4): 병합값을 마진 판정에 쓰면 유동성 필터가 무력화되고
+    #   (현물 30만인데 선물 덕에 300만 통과 = 실측 60개), 마진 포지션을 선물가로 손절
+    #   판정하게 된다. 상세는 margin_short_trader.py의 동일 위치 주석.
+    return out, spot_only
 
 
 def _alias_syms(sym: str) -> set:
@@ -795,7 +799,7 @@ def main():
     while True:
         try:
             now = time.time()
-            tick = all_tickers()
+            tick, spot_tick = all_tickers()
             guard = MarginGuard(ENGINE)
             fut_guard = BinanceGuard(FUTURES_ENGINE)
 
@@ -810,7 +814,9 @@ def main():
             urgent = False   # 2026-08-25: 위험구간이면 아래 루프에서 True
             for sym in list(positions.keys()):
                 pos = positions[sym]
-                t = tick.get(sym)
+                # ★ 2026-09-02(버그헌터 B4): 마진 포지션은 현물 체결이므로 현물가로 판정
+                _venue = pos.get("venue", "margin")
+                t = (spot_tick.get(sym) or tick.get(sym)) if _venue == "margin" else tick.get(sym)
                 px = t[0] if t else pos["entry_price"]
                 # ★ 2026-08-25: 외부청산(수동·거래소측) 감지 — 근거는 exchange_position_gone() 주석.
                 #   실제 포지션이 사라졌으면 실체결가로 기록하고 슬롯을 비운다. 조회실패(None)는
@@ -1290,6 +1296,13 @@ def main():
                     log.info(f"[완화] CUSUM 필터 통과 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): 점수={cscore:.1f}")
 
                 use_margin = coin in UNIVERSE_SET
+                # ★ 2026-09-02(버그헌터 B3): 마진은 현물 호가창 체결이므로 유동성도 현물 기준.
+                if use_margin:
+                    _sp = spot_tick.get(sym)
+                    if _sp is None or _sp[2] < MIN_QUOTE_VOL:
+                        log.info(f"[완화] 마진 경로 스킵 {sym} — 현물 거래대금 "
+                                 f"{(_sp[2] if _sp else 0):,.0f} < {MIN_QUOTE_VOL:,} (선물 폴백)")
+                        use_margin = False
                 if use_margin:
                     # 누적 노출 상한 확인 (48h 홀딩이라 동시다발 진입 가능 → 엔진 자체상한 초과 방지)
                     # ★ 2026-07-13 버그수정: global_cap_usdt(엔진 3개 합산 180)로 체크하고 있어서

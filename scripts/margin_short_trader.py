@@ -362,6 +362,7 @@ def all_tickers():
             out[x["symbol"]] = (float(x["lastPrice"]), float(x["priceChangePercent"]), float(x["quoteVolume"]))
         except Exception:
             pass
+    spot_only = dict(out)   # ★ 2026-09-02: 현물 원본을 따로 보관(마진 판정 전용, 아래 주석)
     try:
         rf = requests.get(f"{FAPI}/fapi/v1/ticker/24hr", timeout=15)
         if rf.status_code == 200:
@@ -382,7 +383,16 @@ def all_tickers():
                     out[sym] = row
     except Exception as e:
         log.warning(f"선물 티커 보충 실패({e}) — 이번 사이클은 현물 상장 코인만 스캔")
-    return out
+    # ★★ 2026-09-02(버그헌터 B3·B4): 위 병합값을 **마진 판정에까지 쓰면 안 된다.**
+    #   ① 유동성 필터 무력화: 현물 30만인데 선물 덕에 MIN_QUOTE_VOL(300만)을 통과하는
+    #      코인이 실측 60개. 이 필터는 "얇은 호가창에서 대형손실"(AI 4개 공통지적)로
+    #      20만→300만 올린 것인데 실효 문턱이 25만으로 되돌아간다. 마진은 현물 호가창에서
+    #      체결되므로 마진 진입 판정에는 **현물 거래대금**을 써야 한다.
+    #   ② 가격 피드 혼용: 마진 대출가능 226개 중 208개가 선물가로 바뀐다. 진입가는 현물
+    #      실체결가인데 손절·손익 판정이 선물가면 두 피드가 섞인다(would_change_log 1145행대에
+    #      기록된 것과 방향만 반대인 같은 결함). 마진 포지션 감시에는 **현물가**를 쓴다.
+    #   → (병합본, 현물전용) 두 개를 반환한다. 후보 발굴은 병합본, 마진 판정은 현물전용.
+    return out, spot_only
 
 
 def _alias_syms(sym: str) -> set:
@@ -829,7 +839,7 @@ def main():
     while True:
         try:
             now = time.time()
-            tick = all_tickers()
+            tick, spot_tick = all_tickers()
             guard = MarginGuard(ENGINE)
             fut_guard = BinanceGuard(FUTURES_ENGINE)
 
@@ -844,7 +854,12 @@ def main():
             urgent = False   # 2026-08-25: 위험구간이면 아래 루프에서 True
             for sym in list(positions.keys()):
                 pos = positions[sym]
-                t = tick.get(sym)
+                # ★ 2026-09-02(버그헌터 B4): 마진 포지션은 현물 호가창에서 체결됐으므로
+                #   손절·손익 판정도 **현물가**로 해야 한다(진입가가 현물 실체결가라 피드가
+                #   섞이면 안 됨). 선물 포지션은 병합본(선물가)을 그대로 쓴다.
+                #   현물가가 없으면 병합본으로 폴백(없는 것보다 낫다).
+                _venue = pos.get("venue", "margin")
+                t = (spot_tick.get(sym) or tick.get(sym)) if _venue == "margin" else tick.get(sym)
                 px = t[0] if t else pos["entry_price"]
                 # ★ 2026-08-25: 외부청산(수동·거래소측) 감지 — 근거는 exchange_position_gone() 주석.
                 #   실제 포지션이 사라졌으면 실체결가로 기록하고 슬롯을 비운다. 조회실패(None)는
@@ -1352,6 +1367,17 @@ def main():
                     log.info(f"CUSUM 필터 통과 {sym}({LOOKBACK_H}h+{ret6h:.0f}%): 점수={cscore:.1f}")
 
                 use_margin = coin in UNIVERSE_SET
+                # ★ 2026-09-02(버그헌터 B3): 마진은 현물 호가창에서 체결되므로 유동성 필터도
+                #   **현물 거래대금**으로 판정해야 한다. 위 후보 스크리닝은 병합값(선물 포함)을
+                #   써서 선물 전용 코인을 놓치지 않게 하되, 마진 경로로 갈 때만 현물 기준을
+                #   다시 확인한다. 실측: 현물 30만인데 선물 덕에 300만 필터를 통과하던 코인 60개.
+                #   현물이 얇으면 마진을 포기하고 선물 폴백으로 보낸다(진입 자체를 버리지 않음).
+                if use_margin:
+                    _sp = spot_tick.get(sym)
+                    if _sp is None or _sp[2] < MIN_QUOTE_VOL:
+                        log.info(f"마진 경로 스킵 {sym} — 현물 거래대금 "
+                                 f"{(_sp[2] if _sp else 0):,.0f} < {MIN_QUOTE_VOL:,} (선물 폴백으로 전환)")
+                        use_margin = False
                 if use_margin:
                     # 누적 노출 상한 확인 (48h 홀딩이라 동시다발 진입 가능 → 엔진 자체상한 초과 방지)
                     # ★ 2026-07-13 버그수정: global_cap_usdt(엔진 3개 합산 180)로 체크하고 있어서

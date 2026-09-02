@@ -191,6 +191,15 @@ def live_target_notional(target_frac):
 #   자체 스킵 문턱(5 USDT)보다 넉넉히 크게 잡아 매 사이클 진동하지 않게 한다.
 DRIFT_TOL_FRAC = 0.15
 DRIFT_TOL_USDT = 10.0
+# ★★ 2026-09-02 당일 재수정(버그헌터 B1): 위 허용오차만으로는 **도달 불가능한 목표를
+#   30분마다 영원히 재시도**한다. rebalance_long()은 BTC 수량을 0.001 단위로 반올림하는데
+#   (binance_guard.py의 `round(delta/price, 3)`), BTC 77,000 기준 0.001 = 약 77 USDT다.
+#   즉 최소 조정 단위(77)가 허용오차(30)보다 크므로 목표에 절대 수렴할 수 없다.
+#   실제 발생: 목표 200 → 0.003BTC(231.7) 체결 → 차 31.7 > 30 → 교정 시도 → delta 31.7이
+#   0.0004BTC로 반올림되어 0 → skip → 30분 뒤 반복(7회 확인, 🚨 알림도 매번 발송).
+#   → 최소 주문 격자보다 확실히 큰 값을 함께 요구한다. 격자 안에서는 더 못 맞추는 게 정상.
+MIN_QTY_STEP_BTC = 0.001      # binance_guard.rebalance_long()의 round(,3)과 일치
+DRIFT_STEP_MULT = 1.5         # 격자의 1.5배는 벌어져야 실제로 조정 가능
 
 
 def live_rebalance(guard, target_frac, price):
@@ -283,7 +292,10 @@ def main():
                             log.warning("[LIVE] 잔고조회 실패 — 실포지션 대조 건너뜀(다음 루프 재시도)")
                         else:
                             _gap = abs(pos["notional"] - _tgt)
-                            _tol = max(_tgt * DRIFT_TOL_FRAC, DRIFT_TOL_USDT)
+                            # 허용오차는 (비율/절대값) 중 큰 값에 더해, **최소 주문 격자**보다도
+                            # 커야 한다(위 MIN_QTY_STEP_BTC 주석 — 안 그러면 무한 재시도).
+                            _tol = max(_tgt * DRIFT_TOL_FRAC, DRIFT_TOL_USDT,
+                                       MIN_QTY_STEP_BTC * price * DRIFT_STEP_MULT)
                             if _gap > _tol:
                                 log.warning(f"[LIVE] ★실포지션 괴리 감지 — 목표 {_tgt:.1f} vs 실제 "
                                             f"{pos['notional']:.1f} USDT (차 {_gap:.1f} > 허용 {_tol:.1f}) → 교정")

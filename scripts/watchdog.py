@@ -134,7 +134,7 @@ ALERT_ON_RESTART = set()
 #   "15분 주기 무보호 감사"가 문서에만 있고 실제로는 존재하지 않았다 — 실거래 마진숏 2건이
 #   무보호인데 아무도 몰랐던 직접 원인. 등록해서 실제로 돌게 한다.
 ONESHOT_BOTS = {"margin_manual_long_trader", "_protection_audit", "ledger_reconcile",
-                "positioning_logger"}
+                "positioning_logger", "positioning_entry_snapshot"}
 
 # ★ 2026-08-29: ONESHOT은 종료 즉시 재기동한다(~40초 주기). 거래소 원장을 페이지네이션으로
 #   긁는 ledger_reconcile을 그 주기로 돌리면 레이트리밋에 걸린다 — 최소 재기동 간격을 둔다.
@@ -142,6 +142,7 @@ ONESHOT_BOTS = {"margin_manual_long_trader", "_protection_audit", "ledger_reconc
 ONESHOT_MIN_INTERVAL_SEC = {
     "ledger_reconcile": 1800,     # 30분. 달력이 보는 순손익 원장 갱신용
     "positioning_logger": 3600,   # 1시간. 데이터가 1시간 단위라 그보다 자주 돌 이유가 없다
+    "positioning_entry_snapshot": 900,   # 15분. 새 진입을 놓치지 않을 만큼만 자주 (이미 찍은 건 건너뜀)
 }
 _oneshot_next_at = {}             # name -> 이 시각 이후에만 재기동
 
@@ -158,6 +159,10 @@ BOTS = {
     #   바이낸스가 이 이력을 30일치만 줘서 백테스트가 불가능하다 — 지금부터 직접 쌓는다.
     #   ONESHOT + 1시간 간격. 놓친 구간은 다음 실행이 자동으로 메운다(최근 30건 조회 후 중복 스킵).
     "positioning_logger":    ROOT / "scripts" / "positioning_logger.py",
+    # ★ 2026-09-03: 봇이 진입한 종목의 '진입 시점 쏠림'을 찍어둔다. 봇은 수정하지 않고
+    #   *_pos.json을 읽기만 한다. GET만, 매매 무관. 쏠림 이력이 30일치뿐이라 소급이 불가능해서
+    #   진입할 때마다 남긴다. (판정용 아님 — 월 9~11건이라 18개월+ 필요. 사실 확인용)
+    "positioning_entry_snapshot": ROOT / "scripts" / "positioning_entry_snapshot.py",
     # "claude_intelligence" 제거 (2026-07-09): claude CLI 서브프로세스 호출이 계속 실패
     # (WinError 2, 5분마다 헛돌기만 함) + 사용자 지시로 오토리서치/루프 당분간 중단.
     # "claude_intelligence":   ROOT / "scripts" / "claude_intelligence.py",  # CI Mode

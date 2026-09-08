@@ -134,12 +134,20 @@ ALERT_ON_RESTART = set()
 #   "15분 주기 무보호 감사"가 문서에만 있고 실제로는 존재하지 않았다 — 실거래 마진숏 2건이
 #   무보호인데 아무도 몰랐던 직접 원인. 등록해서 실제로 돌게 한다.
 ONESHOT_BOTS = {"margin_manual_long_trader", "_protection_audit", "ledger_reconcile",
-                "positioning_logger", "positioning_entry_snapshot"}
+                "positioning_logger", "positioning_entry_snapshot", "forecast_scorecard", "status_heartbeat", "pump_cluster_monitor",
+                "pyramid_ledger"}
 
 # ★ 2026-08-29: ONESHOT은 종료 즉시 재기동한다(~40초 주기). 거래소 원장을 페이지네이션으로
 #   긁는 ledger_reconcile을 그 주기로 돌리면 레이트리밋에 걸린다 — 최소 재기동 간격을 둔다.
 #   여기 없는 ONESHOT은 기존대로 즉시 재기동(동작 변경 없음).
 ONESHOT_MIN_INTERVAL_SEC = {
+    "pyramid_ledger": 86400,           # ★ 2026-09-09 하루 1회 (읽기전용 소급 집계)
+    "pump_cluster_monitor": 1800,      # ★ 2026-09-08 30분마다
+
+    "status_heartbeat": 1800,          # ★ 2026-09-06 30분마다 상태 심박
+
+    "forecast_scorecard": 7 * 86400,   # ★ 2026-09-05 주 1회
+
     "ledger_reconcile": 1800,     # 30분. 달력이 보는 순손익 원장 갱신용
     "positioning_logger": 3600,   # 1시간. 데이터가 1시간 단위라 그보다 자주 돌 이유가 없다
     "positioning_entry_snapshot": 900,   # 15분. 새 진입을 놓치지 않을 만큼만 자주 (이미 찍은 건 건너뜀)
@@ -208,9 +216,16 @@ BOTS = {
     # "rsi_extreme_short_paper" 제거 (2026-08-20): 58건 건당-0.02% — 무작위와 구분 불가.
     # 손절 로직 자체가 없음(시간만기 청산뿐이라는 게 08-19 감사에서 지적돼 이미 disarm 상태).
     # "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",
-    "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15) — 9/2 마감 대상
-    "bc_rule_shadow_paper": ROOT / "scripts" / "bc_rule_shadow_paper.py",  # b/c룰(손실축소) 모의 병렬검증 — 실전 진입 미러링, 순수모의, 2026-08-16 — 9/2 마감 대상
-    "alt_momentum_long_paper": ROOT / "scripts" / "alt_momentum_long_paper.py",  # 알트 모멘텀 Top3 롱 모의(hybrid_trader 알트선별 로직, BTC강세게이트 없이 상시가동, 100건 목표, 순수모의, 2026-08-17) — 9/2 마감 대상
+    "pyramid_ledger": ROOT / "scripts" / "pyramid_ledger.py",  # ★ 2026-09-09 불타기(추가 진입) 소급 원장(읽기전용·주문없음, ONESHOT 1일, PREREG_PYRAMID.md)
+    "pump_cluster_monitor": ROOT / "scripts" / "pump_cluster_monitor.py",  # ★ 2026-09-08 급등 쏠림 감시(읽기전용·알림만, ONESHOT 30분, 사용자 요청)
+    "status_heartbeat": ROOT / "scripts" / "status_heartbeat.py",  # ★ 2026-09-06 외출 중 상태 확인용 심박(읽기전용, ONESHOT 30분, 사용자 요청)
+    "forecast_scorecard": ROOT / "scripts" / "forecast_scorecard.py",  # ★ 2026-09-05 예측 vs 실제 주간 대조표(읽기 전용, ONESHOT 7일 간격, 사용자 요청)
+    # ★ 2026-09-04 사용자 결정으로 중단(9/2 판정문 ②: 정보량 사실상 0). 다음 워치독 재시작부터 안 뜬다.
+    # "oi_divergence_short_paper": ROOT / "scripts" / "oi_divergence_short_paper.py",  # OI다이버전스 숏 (레딧리서치 1순위 후보, 순수모의, 2026-08-15) — 9/2 마감 대상
+    # ★ 2026-09-04 사용자 결정으로 중단(9/2 판정문 ②: 정보량 사실상 0). 다음 워치독 재시작부터 안 뜬다.
+    # "bc_rule_shadow_paper": ROOT / "scripts" / "bc_rule_shadow_paper.py",  # b/c룰(손실축소) 모의 병렬검증 — 실전 진입 미러링, 순수모의, 2026-08-16 — 9/2 마감 대상
+    # ★ 2026-09-04 사용자 결정으로 중단(9/2 판정문 ②: 정보량 사실상 0). 다음 워치독 재시작부터 안 뜬다.
+    # "alt_momentum_long_paper": ROOT / "scripts" / "alt_momentum_long_paper.py",  # 알트 모멘텀 Top3 롱 모의(hybrid_trader 알트선별 로직, BTC강세게이트 없이 상시가동, 100건 목표, 순수모의, 2026-08-17) — 9/2 마감 대상
     "shadow_fleet": ROOT / "scripts" / "shadow_fleet.py",  # 그림자 함대 — 같은 신호에 청산/필터 변형 6개를 병렬 적용해 짝비교(순수모의, 선물전종목+펀딩비·수수료 반영, 2026-08-19) — 9/2 마감 대상
     # "hybrid_trader" 제거 (2026-08-20): 가동 이래 실거래 0건(BEAR 게이트 상시성립 — SMA200
     # 하회 지속). alt_momentum_long_paper가 이 봇의 알트선별 로직에서 BTC게이트만 뺀 상위호환이라

@@ -1,0 +1,36 @@
+{
+  "_doc": "예측 vs 실제 대조표의 '예측' 쪽. 고정값. 규칙이 사전등록으로 바뀔 때만 갱신한다. 매주 재계산하지 않는다(그러면 예측이 결과를 따라가 버린다).",
+  "_unit": "건당 순수익, 증거금 기준 %(가격+펀딩+수수료). CLAUDE.md 2항: 명목가 기준의 2배.",
+  "engines": {
+    "mshort": {
+      "label": "원본 숏 (7h+30~40%, 상승장+CUSUM+횡보장필터, 트레일링 없음, 스탑+40%, 48h)",
+      "ledger": "data/margin_short_ledger.csv",
+      "rule_since": "2026-09-02",
+      "ev_pct_margin": 9.27,
+      "ci95": [
+        3.11,
+        15.18
+      ],
+      "win_rate": 72.5,
+      "n_backtest": 131,
+      "source": "would_change_log.md 2026-09-02 '강세장 CUSUM 통과분 — 신뢰구간·강건성' (research/m5bt/cusum_in_bull.py, 심볼블록 CI, 3개 연도 양수)",
+      "label_note": "★2026-09-06 정정: 실거래 mshort에는 BTC_SIDEWAYS_FILTER_ON=True 진입필터가 하나 더 있다(margin_short_trader.py). 예측 EV(+9.27%)를 뽑은 백테스트 표본에는 이 필터가 없어, 실거래 표본은 그 부분집합이다. 즉 '괴리' 판정이 시장 변화가 아니라 필터 1개 차이에서 나올 수 있다. 판정문에 쓸 때 이 차이를 명시할 것. 예측 수치 자체는 고정 — 바꾸지 않았다."
+    },
+    "mshort_wide": {
+      "label": "완화 숏 (7h+15~30%, 상승장+CUSUM, 청산 원본과 동일)",
+      "ledger": "data/margin_short_wide_ledger.csv",
+      "rule_since": "2026-08-31",
+      "ev_pct_margin": 2.99,
+      "ci95": [
+        0.47,
+        5.55
+      ],
+      "win_rate": 67.7,
+      "n_backtest": 573,
+      "source": "같은 항목의 완화봇 열. 주의: 무필터 완화 신호는 1년 백테스트 -2.01%(2026-08-31 (3)) — CUSUM이 붙어야 양수"
+    }
+  },
+  "context_only": {
+    "core_lev": "BTC 200일선 2배. 800일 백테스트 +34.8% vs HODL -1.2%. 건당 EV 개념이 없어 예측 열 없음, 실적만 기록."
+  }
+}

@@ -27,6 +27,12 @@
   V3_fund8h  펀딩주기 8시간 종목만 진입 (4h는 정산이 2배라 비용 2배) — 나머지 V0와 동일
   V4_posfund 진입 직전 펀딩율이 0 이상일 때만 진입 — 나머지 V0와 동일
   V5_stop30  스탑 -40%→-30% — 나머지 동일
+  ★ 2026-09-04 (docs/PREREG_FLEET_V6V7.md, 사용자 결정) — 9/2 판정문이 남긴 결정 ①:
+  V3_fund8h·V4_posfund 퇴역(retired=True: 신규 진입만 중단, 열린 포지션은 자연 청산).
+  V6_timestop  V1 + 진입 24h 시점에 숏이 손실 중(현재가>진입가)이면 청산 — 1회 판정
+  V7_fundexit  V1 + 진입 24h 시점에 누적 펀딩이 음수(숏이 내는 중)면 청산 — 1회 판정
+             둘 다 하락장 백테스트에서 "효과가 2025-10-11 하루에 집중"으로 기각된 규칙을
+             정의 그대로 전방 검증한다. 문턱·시점은 여기서 새로 정하지 않았다. 판정 9/19.
 
 손익은 전부 (가격손익 + 펀딩비 + 수수료)로 기록한다. 이게 이 봇의 존재 이유다.
 
@@ -113,9 +119,12 @@ VARIANTS = {
     "V0_base":    dict(stop=40.0, trail=(15.0, 10.0), hold_h=48, filt=None),
     "V1_notrail": dict(stop=40.0, trail=None,          hold_h=48, filt=None),
     "V2_hold24":  dict(stop=40.0, trail=(15.0, 10.0), hold_h=24, filt=None),
-    "V3_fund8h":  dict(stop=40.0, trail=(15.0, 10.0), hold_h=48, filt="funding_8h_only"),
-    "V4_posfund": dict(stop=40.0, trail=(15.0, 10.0), hold_h=48, filt="funding_non_negative"),
+    "V3_fund8h":  dict(stop=40.0, trail=(15.0, 10.0), hold_h=48, filt="funding_8h_only", retired=True),      # ★ 09-04 퇴역
+    "V4_posfund": dict(stop=40.0, trail=(15.0, 10.0), hold_h=48, filt="funding_non_negative", retired=True),  # ★ 09-04 퇴역
     "V5_stop30":  dict(stop=30.0, trail=(15.0, 10.0), hold_h=48, filt=None),
+    # ★ 2026-09-04 PREREG_FLEET_V6V7 — V1에 규칙 하나씩만 얹음(다른 건 V1과 완전 동일)
+    "V6_timestop": dict(stop=40.0, trail=None, hold_h=48, filt=None, timestop_h=24),
+    "V7_fundexit": dict(stop=40.0, trail=None, hold_h=48, filt=None, fundexit_h=24),
 }
 
 
@@ -301,6 +310,26 @@ def main():
                         trig, give = cfg["trail"]
                         if peak_pnl >= trig and cur_pnl <= peak_pnl - give:
                             reason = f"트레일링(최고{peak_pnl:.0f}%→{cur_pnl:.0f}%)"
+                    # ★ 2026-09-04 PREREG_FLEET_V6V7: 24h 시점 '한 번만' 판정하는 규칙 둘.
+                    #   V6 시간손절: 24h 경과 후 첫 폴링에서 현재가 > 진입가(숏 손실 중)면 청산.
+                    #   V7 펀딩청산: 24h 경과 후 첫 폴링에서 누적 펀딩(실측 USDT) < 0(내는 중)면 청산.
+                    #   조건 미충족이면 플래그를 세우고 다시 보지 않는다(백테스트 정의와 동일).
+                    #   펀딩 조회 실패(이벤트 0건)는 플래그를 세우지 않고 다음 폴링에 재시도한다 —
+                    #   funding_paid()가 실패 시 0을 돌려주므로 그대로 믿으면 '안 내는 중'으로 오판한다.
+                    if reason is None and cfg.get("timestop_h") and hold_h >= cfg["timestop_h"] and not p.get("ts_checked"):
+                        p["ts_checked"] = True
+                        _save(POS_PATH, positions)
+                        if px > entry:
+                            reason = f"시간손절({cfg['timestop_h']}h)"
+                    if reason is None and cfg.get("fundexit_h") and hold_h >= cfg["fundexit_h"] and not p.get("fx_checked"):
+                        _f, _fev = funding_paid(sym, p["entry_ms"], now * 1000, NOTIONAL_USDT)
+                        if _fev > 0:
+                            p["fx_checked"] = True
+                            _save(POS_PATH, positions)
+                            if _f < 0:
+                                reason = f"펀딩청산({cfg['fundexit_h']}h)"
+                        else:
+                            log.warning(f"[{vname}] {sym} 펀딩청산 판정용 펀딩이벤트 0건 — 다음 폴링 재시도")
                     if reason is None and hold_h >= cfg["hold_h"]:
                         reason = f"{cfg['hold_h']}h만기"
                     if not reason:
@@ -362,6 +391,8 @@ def main():
                 for vname, cfg in VARIANTS.items():
                     if sym in positions[vname]:
                         skipped.append(f"{vname}:보유중"); continue
+                    if cfg.get("retired"):
+                        skipped.append(f"{vname}:retired"); continue
                     if not entry_allowed(cfg["filt"], sig):
                         skipped.append(f"{vname}:{cfg['filt']}"); continue
                     positions[vname][sym] = dict(

@@ -191,9 +191,31 @@ def cycle():
         log.error(f"★칸 상한 초과 {len(pos)}>{MAX_SLOTS} — 사전등록 §3 하드 중단 조건")
 
 
+LOCK = ROOT / "data" / "drift_short_paper.lock"
+
+
+def acquire_lock():
+    """중복 실행 방지. watchdog 재시작 시 두 번 뜨면 포지션 파일이 이중 기록된다."""
+    try:
+        old = int(LOCK.read_text(encoding="utf-8").strip())
+        import subprocess
+        r = subprocess.run(["tasklist", "/FI", f"PID eq {old}"], capture_output=True,
+                           text=True, encoding="cp949", errors="replace")
+        if str(old) in (r.stdout or ""):
+            log.error(f"이미 실행 중(PID {old}) — 종료한다")
+            return False
+    except Exception:
+        pass
+    LOCK.parent.mkdir(exist_ok=True)
+    LOCK.write_text(str(os.getpid()), encoding="utf-8")
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--once", action="store_true")
     a = ap.parse_args()
+    if not acquire_lock():
+        return
     log.info(f"=== 구조적 하락 숏 모의 시작 (명목 {NOTIONAL} / {MAX_SLOTS}칸 / {HOLD_DAYS}일 / 손절+{STOP_NOM:.0f}%) ===")
     log.info("주문 없음. 모의 전용. 판정일 2026-12-10 (PREREG_DRIFT_PAPER.md)")
     while True:

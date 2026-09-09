@@ -57,9 +57,12 @@ BOT_OUTPUTS = {
     "crossex_logger": ["data/crossex_events.csv"],
     "volume_radar": ["data/volume_radar_events.csv"],
     "igniter_alert": ["data/igniter_events.csv"],
-    "bc_rule_shadow_paper": ["data/bc_rule_shadow_trades.csv"],
-    "oi_divergence_short_paper": ["data/oi_div_paper_trades.csv"],
-    "alt_momentum_long_paper": ["data/alt_momentum_long_pos.json"],
+    # ★ 2026-09-06 중단됨(9/4 사용자 결정) — 감시 대상에서 제외
+    # "bc_rule_shadow_paper": ["data/bc_rule_shadow_trades.csv"],
+    # ★ 2026-09-06 중단됨(9/4 사용자 결정) — 감시 대상에서 제외
+    # "oi_divergence_short_paper": ["data/oi_div_paper_trades.csv"],
+    # ★ 2026-09-06 중단됨(9/4 사용자 결정) — 감시 대상에서 제외
+    # "alt_momentum_long_paper": ["data/alt_momentum_long_pos.json"],
     "rsi_extreme_short_paper": ["data/rsi_short_trades.csv"],
 }
 

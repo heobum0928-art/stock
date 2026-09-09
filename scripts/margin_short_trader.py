@@ -971,6 +971,7 @@ def main():
                             try: guard.cancel_order(pos["coin"], _old)
                             except Exception as e: log.warning(f"{sym} 옛 스탑 취소 실패({e})")
                         pos["stop_order_id"] = sres["order_id"]
+                        pos["stop_price"] = sres.get("stop_price")   # ★ 2026-09-06 기록 누락 수정
                         if sres.get("provisional"):
                             pos["stop_provisional"] = True
                         else:
@@ -1432,6 +1433,7 @@ def main():
                             #   (증거금 기준 -80%가 아니라 -35.2%). 청산 규칙이 코드 부작용으로
                             #   바뀌는 것이라 51건 관문 표본까지 오염시킨다.
                             positions[sym]["stop_order_id"] = sres["order_id"]
+                            positions[sym]["stop_price"] = sres.get("stop_price")   # ★ 2026-09-06
                             if sres.get("provisional"):
                                 positions[sym]["stop_provisional"] = True
                         else:
@@ -1475,6 +1477,7 @@ def main():
                                           "exit_ts": now + HOLD_H*3600, "entry_iso": datetime.now(KST).isoformat(), "live": True,
                                           "btc_entry": tick.get("BTCUSDT", (None,))[0],
                                           "stop_order_id": res.get("stop_order_id"),
+                                          "stop_price": res.get("stop_price"),   # ★ 2026-09-06
                                           "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
                         if not res.get("stop_verified"):
                             log.error(f"🚨 {sym} 서버측 스탑주문 검증 실패 — 무보호 상태일 수 있음, 수동 확인 필요")

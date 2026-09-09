@@ -216,6 +216,7 @@ BOTS = {
     # "rsi_extreme_short_paper" 제거 (2026-08-20): 58건 건당-0.02% — 무작위와 구분 불가.
     # 손절 로직 자체가 없음(시간만기 청산뿐이라는 게 08-19 감사에서 지적돼 이미 disarm 상태).
     # "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",
+    "drift_short_paper": ROOT / "scripts" / "drift_short_paper.py",  # ★ 2026-09-10 구조적 하락 숏 모의(주문없음·상주, 200칸/30일, PREREG_DRIFT_PAPER.md 판정일 12-10)
     "pyramid_ledger": ROOT / "scripts" / "pyramid_ledger.py",  # ★ 2026-09-09 불타기(추가 진입) 소급 원장(읽기전용·주문없음, ONESHOT 1일, PREREG_PYRAMID.md)
     "pump_cluster_monitor": ROOT / "scripts" / "pump_cluster_monitor.py",  # ★ 2026-09-08 급등 쏠림 감시(읽기전용·알림만, ONESHOT 30분, 사용자 요청)
     "status_heartbeat": ROOT / "scripts" / "status_heartbeat.py",  # ★ 2026-09-06 외출 중 상태 확인용 심박(읽기전용, ONESHOT 30분, 사용자 요청)

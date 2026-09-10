@@ -213,13 +213,63 @@ def pump_pct(sym):
     return (now / old - 1) * 100, now
 
 
+# ★ 2026-09-11 (PREREG_CUSUM_JUDGE.md) — 진입 시점 CUSUM 점수를 **기록만** 한다.
+#   이 값으로 진입을 막거나 허용하지 않는다. 그림자함대가 필터 없이 전 신호를 잡는 것이
+#   존재 이유이고, 그래야 통과/탈락을 **같은 신호 풀**에서 비교할 수 있다.
+#   margin_short_trader를 import하면 그쪽 포트 잠금이 걸려 프로세스가 죽으므로
+#   계산만 그대로 옮겼다. 상수·연산 순서는 margin_short_trader.py:568-593과 동일하다.
+#   **재구현이므로 실거래 로그 출력값과 대조 확인했다**(2026-09-11):
+#     05:57:06 실거래 로그 SAGAUSDT 11.8 → 05:57:34 재구현 12.45.
+#     그 5분간 점수가 7.6→11.8로 분당 1~2씩 오르는 중이었으므로 28초 차이의 +0.65는 일치.
+#   ★ 알려진 차이 1건: 실거래 `_klines_any`는 **현물 봉을 우선**하고 선물로 폴백하는데,
+#     여기는 **선물 봉만** 쓴다. PREREG_CUSUM_JUDGE 판정은 그림자함대 안에서
+#     점수와 결과를 함께 비교하므로 이 차이가 판정을 무효화하지 않는다.
+#     다만 **문턱 38.1을 그대로 옮겨 해석할 때는 이 차이를 병기해야 한다.**
+_CUSUM_VOLWIN, _CUSUM_K, _CUSUM_LIMIT = 288, 0.3, 1000
+
+
+def _cusum_of(sym):
+    try:
+        import numpy as _np
+        r = requests.get(FAPI + "/fapi/v1/klines",
+                         params={"symbol": sym, "interval": "5m", "limit": _CUSUM_LIMIT},
+                         timeout=20)
+        if r.status_code != 200:
+            return None
+        k = r.json()
+        n = len(k)
+        if n < _CUSUM_VOLWIN + 10:
+            return None
+        c = _np.array([float(x[4]) for x in k])
+        ret = _np.zeros(n); ret[1:] = c[1:] / c[:-1] - 1.0
+        cs1 = _np.concatenate(([0.0], _np.cumsum(ret)))
+        cs2 = _np.concatenate(([0.0], _np.cumsum(ret * ret)))
+        sum1 = cs1[_CUSUM_VOLWIN:] - cs1[:n + 1 - _CUSUM_VOLWIN]
+        sum2 = cs2[_CUSUM_VOLWIN:] - cs2[:n + 1 - _CUSUM_VOLWIN]
+        mean = sum1 / _CUSUM_VOLWIN
+        var = _np.maximum(sum2 / _CUSUM_VOLWIN - mean ** 2, 1e-12)
+        std = _np.sqrt(var)
+        sf = _np.full(n, _np.nan); sf[_CUSUM_VOLWIN:] = std[:n - _CUSUM_VOLWIN]
+        z = _np.zeros(n)
+        v = ~_np.isnan(sf) & (sf > 1e-9)
+        z[v] = ret[v] / sf[v]
+        S = 0.0
+        for i in range(_CUSUM_VOLWIN, n):
+            S = max(0.0, S + z[i] - _CUSUM_K)
+        return round(float(S), 3)
+    except Exception:
+        return None
+
+
 SIG_FIELDS = ["signal_id", "time", "symbol", "pump_pct", "price", "qvol_24h",
-              "chg_24h", "funding_rate", "funding_interval_h", "taken_by", "skipped_by"]
+              "chg_24h", "funding_rate", "funding_interval_h", "taken_by", "skipped_by",
+              "cusum_score"]   # ★ 2026-09-11 추가 (PREREG_CUSUM_JUDGE.md) — 기록만, 동작 변경 없음
 TRADE_FIELDS = ["signal_id", "variant", "symbol", "entry_time", "exit_time",
                 "entry_price", "exit_price", "hold_h", "reason",
                 "price_pnl_pct", "price_pnl_usdt", "funding_usdt", "funding_events",
                 "commission_usdt", "net_pnl_usdt", "net_pnl_pct_margin",
-                "mfe_pct", "mae_pct", "funding_rate_at_entry", "funding_interval_h"]
+                "mfe_pct", "mae_pct", "funding_rate_at_entry", "funding_interval_h",
+                "cusum_score"]   # ★ 2026-09-11 추가 (PREREG_CUSUM_JUDGE.md)
 
 
 def _append(path, fields, row):
@@ -349,6 +399,7 @@ def main():
                     del positions[vname][sym]
                     _save(POS_PATH, positions)
                     _append(TRADES_PATH, TRADE_FIELDS, dict(
+                        cusum_score=p.get("cusum_score"),
                         signal_id=p["signal_id"], variant=vname, symbol=sym,
                         entry_time=p["entry_iso"], exit_time=datetime.now(KST).isoformat(),
                         entry_price=entry, exit_price=px, hold_h=round(hold_h, 2), reason=reason,
@@ -386,7 +437,8 @@ def main():
                            pump_pct=round(ret, 2), price=px, qvol_24h=round(qvol),
                            chg_24h=round(chg24, 2),
                            funding_rate=last_funding_rate(sym),
-                           funding_interval_h=finfo.get(sym, 8))
+                           funding_interval_h=finfo.get(sym, 8),
+                           cusum_score=_cusum_of(sym))
                 taken, skipped = [], []
                 for vname, cfg in VARIANTS.items():
                     if sym in positions[vname]:
@@ -397,6 +449,7 @@ def main():
                         skipped.append(f"{vname}:{cfg['filt']}"); continue
                     positions[vname][sym] = dict(
                         signal_id=sig_id, entry_price=px, entry_ts=now, entry_ms=now * 1000,
+                        cusum_score=sig.get("cusum_score"),
                         entry_iso=datetime.now(KST).isoformat(),
                         mfe_price=px, mae_price=px,
                         funding_rate=sig["funding_rate"],

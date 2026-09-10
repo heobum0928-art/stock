@@ -272,7 +272,39 @@ TRADE_FIELDS = ["signal_id", "variant", "symbol", "entry_time", "exit_time",
                 "cusum_score"]   # ★ 2026-09-11 추가 (PREREG_CUSUM_JUDGE.md)
 
 
+def _migrate_header(path, fields):
+    """★ 2026-09-11: 컬럼을 추가하면 기존 파일 헤더는 그대로인데 데이터만 길어져
+    **헤더와 행의 필드 수가 어긋난다**. CLAUDE.md 결함 2번(margin_short_trades.csv
+    헤더 16 vs 데이터 18, pandas 파싱 깨짐)과 같은 사고다. 컬럼이 늘면 자동으로
+    헤더를 고치고 기존 행에 빈 칸을 채운다."""
+    pth = Path(path)
+    if not pth.exists():
+        return
+    try:
+        with open(path, encoding="utf-8", newline="") as f:
+            rows = list(csv.reader(f))
+        if not rows or rows[0] == list(fields):
+            return
+        if len(rows[0]) >= len(fields):
+            return                              # 줄어드는 경우는 건드리지 않는다
+        out = [list(fields)] + [r + [""] * (len(fields) - len(r)) for r in rows[1:]]
+        tmp = str(pth) + ".tmp"
+        with open(tmp, "w", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerows(out)
+        os.replace(tmp, path)
+        log.warning(f"[CSV] {pth.name} 헤더 {len(rows[0])}→{len(fields)}필드로 이전, "
+                    f"기존 {len(rows)-1}행에 빈 칸 채움")
+    except Exception as e:
+        log.error(f"[CSV] {pth.name} 헤더 이전 실패: {e}")
+
+
+_MIGRATED = set()
+
+
 def _append(path, fields, row):
+    if path not in _MIGRATED:
+        _migrate_header(path, fields)
+        _MIGRATED.add(path)
     new = not Path(path).exists()
     with open(path, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields)

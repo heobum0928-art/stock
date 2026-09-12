@@ -120,6 +120,43 @@ def _shadow_summary():
     return "\n".join(lines)
 
 
+def _actual_position(sym):
+    """거래소 실측 (평균진입가, 수량, 표시꼬리). 손으로 추가한 물량까지 반영한다.
+    선물 → positionRisk / 마진 → 차입수량 + 체결내역 가중평균. 실패 시 None."""
+    # 선물
+    try:
+        r = _signed("GET", "/fapi/v2/positionRisk", {"symbol": sym})
+        d = r.json() if hasattr(r, "json") else json.loads(r)
+        for x in (d if isinstance(d, list) else [d]):
+            amt = float(x.get("positionAmt", 0))
+            if amt < 0:
+                return float(x["entryPrice"]), abs(amt), ""
+    except Exception:
+        pass
+    # 마진
+    try:
+        from bithumb.margin_guard import _signed as _ms
+        r = _ms("GET", "/sapi/v1/margin/account", {})
+        acc = r.json() if hasattr(r, "json") else json.loads(r)
+        base = sym[:-4]
+        borrowed = 0.0
+        for u in acc.get("userAssets", []):
+            if u["asset"] == base:
+                borrowed = float(u.get("borrowed", 0))
+        if borrowed <= 0:
+            return None
+        r2 = _ms("GET", "/sapi/v1/margin/myTrades", {"symbol": sym, "limit": 100})
+        tr = r2.json() if hasattr(r2, "json") else json.loads(r2)
+        sells = [t for t in tr if not t["isBuyer"]]
+        if not sells:
+            return None
+        q = sum(float(t["qty"]) for t in sells)
+        avg = sum(float(t["qty"]) * float(t["price"]) for t in sells) / q
+        return avg, borrowed, ""
+    except Exception:
+        return None
+
+
 def build_text():
     rows = []
 
@@ -134,11 +171,20 @@ def build_text():
             continue
         for sym, p in json.loads(ms.read_text(encoding="utf-8")).items():
             cur = price(sym)
-            pnl_pct = (1 - cur / p["entry_price"]) * 100
-            pnl_usdt = p["margin"] * 2 * (pnl_pct / 100)
+            # ★ 2026-09-12(사용자 요청): 사용자가 손으로 불타기하면 봇 기록(qty/margin)이
+            #   실제보다 작아 순익이 틀리게 나온다. TREE는 봇 3,491 / 실제 5,859,
+            #   TFUEL은 봇 7,923 / 실제 25,923이었다.
+            #   **거래소 실측 수량·평균단가를 우선 쓰고**, 조회 실패 시에만 봇 기록으로 폴백한다.
+            act = _actual_position(sym)
+            if act:
+                ent, qty, note = act
+            else:
+                ent, qty, note = p["entry_price"], float(p.get("qty") or 0), ""
+            pnl_pct = (1 - cur / ent) * 100
+            pnl_usdt = (ent - cur) * qty if qty else p["margin"] * 2 * (pnl_pct / 100)
             funding, comm = _fees(sym, p["entry_ts"])
             net_usdt = pnl_usdt + funding + comm
-            rows.append((p["coin"], tag, pnl_pct, net_usdt, _remain_h(p.get("exit_ts"))))
+            rows.append((p["coin"] + note, tag, pnl_pct, net_usdt, _remain_h(p.get("exit_ts"))))
 
     ml = ROOT / "data" / "margin_manual_long_pos.json"
     if ml.exists():

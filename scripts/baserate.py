@@ -43,7 +43,10 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PQ = os.path.join(ROOT, "research", "m5bt", "pq")
 BARS_1H, BARS_7H, BARS_24H = 12, 84, 288
-HORIZONS = [(48, "4시간"), (144, "12시간"), (288, "24시간"), (576, "48시간")]
+# ★ 2026-09-16 사용자 요청: 15분·1시간 지평 추가. 짧은 지평은 수수료(왕복 0.10% 명목)
+#   비중이 커서 기대값이 거의 남지 않는다 — 그 사실이 보이도록 같은 비용으로 계산한다.
+HORIZONS = [(1, "5분"), (3, "15분"), (12, "1시간"), (48, "4시간"), (144, "12시간"),
+            (288, "24시간"), (576, "48시간"), (864, "72시간"), (2016, "7일")]
 FEE_NOM = 0.10
 CACHE = os.path.join(ROOT, "data", "_baserate_cache.npz")
 try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -56,16 +59,16 @@ def build():
         z = np.load(CACHE)
         return {k: z[k] for k in z.files}
     print("과거 표 만드는 중(최초 1회, 1~3분)...", flush=True)
-    R = {k: [] for k in ("r7", "r1", "qv", "dh", "f48", "f144", "f288", "f576")}
+    R = {k: [] for k in ("r7", "r1", "qv", "dh", "f1", "f3", "f12", "f48", "f144", "f288", "f576", "f864", "f2016")}
     files = sorted(glob.glob(os.path.join(PQ, "*.npz")))
     for i, p in enumerate(files):
         z = np.load(p); c = z["c"]; h = z["h"]; qv = z["qv"]
         n = len(c)
-        if n < BARS_24H + 576 + 10:
+        if n < BARS_24H + 2016 + 10:
             continue
         cs = np.concatenate(([0.0], np.cumsum(qv)))
         step = 12                                   # 1시간 간격 표본(인접 중복 완화)
-        idx = np.arange(BARS_24H, n - 576, step)
+        idx = np.arange(BARS_24H, n - 2016, step)
         if not len(idx): continue
         r7 = (c[idx] / c[idx - BARS_7H] - 1) * 100
         r1 = (c[idx] / c[idx - BARS_1H] - 1) * 100
@@ -75,7 +78,7 @@ def build():
         ok = (v24 >= 1_000_000) & np.isfinite(r7) & np.isfinite(r1)
         R["r7"].append(r7[ok]); R["r1"].append(r1[ok])
         R["qv"].append(v24[ok]); R["dh"].append(dh[ok])
-        for b, key in ((48, "f48"), (144, "f144"), (288, "f288"), (576, "f576")):
+        for b, key in ((1, "f1"), (3, "f3"), (12, "f12"), (48, "f48"), (144, "f144"), (288, "f288"), (576, "f576"), (864, "f864"), (2016, "f2016")):
             R[key].append(((c[idx + b] / c[idx] - 1) * 100)[ok])
         if (i + 1) % 200 == 0:
             print(f"  {i+1}/{len(files)}", flush=True)
@@ -126,7 +129,7 @@ def report(sym, T):
     print(f"\n  {'지평':>6s}{'오를확률':>10s}{'95%CI':>16s}{'평균':>9s}{'중앙':>9s}"
           f"{'롱기대':>10s}{'숏기대':>10s}")
     for b, lab in HORIZONS:
-        f = T[{48: "f48", 144: "f144", 288: "f288", 576: "f576"}[b]][m]
+        f = T[{1: "f1", 3: "f3", 12: "f12", 48: "f48", 144: "f144", 288: "f288", 576: "f576", 864: "f864", 2016: "f2016"}[b]][m]
         up = int((f > 0).sum()); lo, hi = ci_prop(up, len(f))
         lng = f.mean() - FEE_NOM; sht = -f.mean() - FEE_NOM
         flat = "  ← 동전과 구분 불가" if (lo <= 50 <= hi) else ""

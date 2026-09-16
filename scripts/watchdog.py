@@ -108,8 +108,8 @@ HANG_CHECK_OVERRIDE_SEC["shadow_fleet"] = 21600
 # ★ 2026-09-16: user_pick_paper 는 5분마다 mark price 몇 개만 조회하는 I/O바운드라
 #   CPU가 거의 안 쌓인다. 기본 30분 문턱이면 bc_rule_shadow_paper 처럼 행상태 오탐이 난다.
 HANG_CHECK_OVERRIDE_SEC["user_pick_paper"] = 21600
-# liq_collector: 웹소켓 대기가 대부분이라 CPU가 거의 안 쌓인다(위와 같은 이유).
-HANG_CHECK_OVERRIDE_SEC["liq_collector"] = 21600
+# ob_collector: 5초 REST 폴링 I/O바운드 — 위와 같은 이유로 문턱 완화.
+HANG_CHECK_OVERRIDE_SEC["ob_collector"] = 21600
 # tg_bot: 그 자체는 매매 안 하지만 margin_manual_long_trader의 실질적 안전망(15초 폴링으로
 # 트레일링/손절을 직접 처리)이라 6시간까지는 안 늘리고 core_trader/core_leveraged와 같은
 # 90분으로 절충 — 오탐 소음은 없애되 진짜 행 상태는 비교적 빨리 잡음.
@@ -223,8 +223,8 @@ BOTS = {
     # "rsi_extreme_short_paper": ROOT / "scripts" / "rsi_extreme_short_paper.py",
     "stop_warn": ROOT / "scripts" / "stop_warn.py",  # ★ 2026-09-10 손절 조기경보(읽기전용·알림만·주문없음, 상주 300초, 사용자 요청) — VTHO가 2시간56분 만에 손절된 게 계기
     "drift_short_paper": ROOT / "scripts" / "drift_short_paper.py",  # ★ 2026-09-10 구조적 하락 숏 모의(주문없음·상주, 200칸/30일, PREREG_DRIFT_PAPER.md 판정일 12-10)
-    "user_pick_paper": ROOT / "scripts" / "user_pick_paper.py",  # ★ 2026-09-16 사용자 종목선정 검정 모의(주문없음·상주, 5분 폴링, PREREG_USER_PICK.md 30건 또는 12-31)
-    "liq_collector": ROOT / "scripts" / "liq_collector.py",  # ★ 2026-09-16 강제청산 스트림 수집(순수 수집·주문없음·상주, 웹소켓). 검정 기준은 표본 쌓인 뒤 별도 사전등록
+    "user_pick_paper": ROOT / "scripts" / "user_pick_paper.py",
+    "ob_collector": ROOT / "scripts" / "ob_collector.py",  # ★ 2026-09-16 호가창 수집(순수 수집·주문없음·상주, 5초 REST, PREREG_ORDERBOOK_COLLECT.md, 12-16까지)  # ★ 2026-09-16 사용자 종목선정 검정 모의(주문없음·상주, 5분 폴링, PREREG_USER_PICK.md 30건 또는 12-31)
     "pyramid_ledger": ROOT / "scripts" / "pyramid_ledger.py",  # ★ 2026-09-09 불타기(추가 진입) 소급 원장(읽기전용·주문없음, ONESHOT 1일, PREREG_PYRAMID.md)
     "pump_cluster_monitor": ROOT / "scripts" / "pump_cluster_monitor.py",  # ★ 2026-09-08 급등 쏠림 감시(읽기전용·알림만, ONESHOT 30분, 사용자 요청)
     "status_heartbeat": ROOT / "scripts" / "status_heartbeat.py",  # ★ 2026-09-06 외출 중 상태 확인용 심박(읽기전용, ONESHOT 30분, 사용자 요청)

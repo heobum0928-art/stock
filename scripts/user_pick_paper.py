@@ -141,7 +141,8 @@ def close_row(r, px, reason, now_ms):
     hold_h = (now_ms - r["entry_ms"]) / 3600_000
     row = dict(pick_id=r["pick_id"], mode=r.get("mode", "swing"), kind=r["kind"],
                coin=r["coin"], side=side,
-               entry_time=r["entry_time"], exit_time=datetime.now(KST).isoformat(),
+               entry_time=r["entry_time"],
+               exit_time=datetime.fromtimestamp(now_ms / 1000, KST).isoformat(),
                entry_price=entry, exit_price=px, hold_h=round(hold_h, 2), reason=reason,
                pnl_pct_notional=round(nom, 3), pnl_pct_margin=round(net / MARGIN * 100, 3),
                pnl_usdt=round(net, 3), funding_usdt=round(fund, 4), note="")

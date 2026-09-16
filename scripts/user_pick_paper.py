@@ -33,12 +33,14 @@ LOG = ROOT / "logs" / "user_pick_paper.log"
 # ── 사전등록 고정값 ──
 NOTIONAL, MARGIN = 100.0, 50.0
 LEV = 2.0
-STOP_PCT = 40.0            # 명목 기준 역행
+# 트랙별 고정 규칙 — PREREG_USER_PICK.md(swing) / PREREG_USER_PICK_SCALP.md(scalp)
+MODES = {"swing": dict(stop=40.0, hold_h=48), "scalp": dict(stop=15.0, hold_h=6)}
+STOP_PCT = 40.0            # 명목 기준 역행 (swing 기본, 하위호환)
 HOLD_H = 48
 FEE_SIDE = 0.0006
 MIN_QVOL = 3_000_000
 LIQ_SHORT, LIQ_LONG = 42.857, 47.368
-FIELDS = ["pick_id", "kind", "coin", "side", "entry_time", "exit_time", "entry_price",
+FIELDS = ["pick_id", "mode", "kind", "coin", "side", "entry_time", "exit_time", "entry_price",
           "exit_price", "hold_h", "reason", "pnl_pct_notional", "pnl_pct_margin",
           "pnl_usdt", "funding_usdt", "note"]
 
@@ -91,10 +93,12 @@ def funding_paid(sym, s_ms, e_ms, notional, side):
     return tot if side == "short" else -tot
 
 
-def add(coin, side):
+def add(coin, side, mode="swing"):
     coin = coin.upper().replace("USDT", "")
     side = side.lower()
+    mode = mode.lower()
     assert side in ("long", "short"), "방향은 long 또는 short"
+    assert mode in MODES, f"모드는 {list(MODES)}"
     sym = coin + "USDT"
     px = mark(sym)
     now_ms = int(time.time() * 1000)
@@ -105,16 +109,17 @@ def add(coin, side):
     pid = f"{datetime.now(KST).strftime('%m%d%H%M%S')}-{coin}"
     rows = load()
     for kind, s, p in (("pick", sym, px), ("control", ctrl_sym, ctrl_px)):
-        rows.append(dict(pick_id=pid, kind=kind, coin=s[:-4], symbol=s, side=side,
+        rows.append(dict(pick_id=pid, mode=mode, kind=kind, coin=s[:-4], symbol=s, side=side,
                          entry_price=p, entry_ms=now_ms,
                          entry_time=datetime.now(KST).isoformat(), mfe=p, mae=p))
     save(rows)
-    log(f"기록 {pid} | 픽 {coin} {side} @{px:g} | 대조군 {ctrl_sym[:-4]} @{ctrl_px:g}")
+    cfg = MODES[mode]
+    log(f"기록 {pid} [{mode}] | 픽 {coin} {side} @{px:g} | 대조군 {ctrl_sym[:-4]} @{ctrl_px:g}")
     print(f"\n  ▶ 픽:    {coin:10s} {side:5s} @ {px:g}")
     print(f"  ▶ 대조군: {ctrl_sym[:-4]:10s} {side:5s} @ {ctrl_px:g}   (무작위, 시드={now_ms})")
-    print(f"  청산 규칙: 명목 -{STOP_PCT:.0f}% 손절 / {HOLD_H}h 만기 / 2배 · 모의(주문 없음)")
-    n = len({r['pick_id'] for r in rows})
-    print(f"  누적 {n}/30건 (판정: 30건 또는 2026-12-31)")
+    print(f"  청산 규칙[{mode}]: 명목 -{cfg['stop']:.0f}% 손절 / {cfg['hold_h']}h 만기 / 2배 · 모의(주문 없음)")
+    n = len({r['pick_id'] for r in rows if r.get('mode', 'swing') == mode})
+    print(f"  {mode} 트랙 누적 {n}/30건 (판정: 30건 또는 2026-12-31)")
 
 
 def adverse_pct(side, entry, px):
@@ -134,7 +139,8 @@ def close_row(r, px, reason, now_ms):
     if adverse_pct(side, entry, px) >= liq or net < -MARGIN:
         net, reason = -MARGIN, f"강제청산({reason})"
     hold_h = (now_ms - r["entry_ms"]) / 3600_000
-    row = dict(pick_id=r["pick_id"], kind=r["kind"], coin=r["coin"], side=side,
+    row = dict(pick_id=r["pick_id"], mode=r.get("mode", "swing"), kind=r["kind"],
+               coin=r["coin"], side=side,
                entry_time=r["entry_time"], exit_time=datetime.now(KST).isoformat(),
                entry_price=entry, exit_price=px, hold_h=round(hold_h, 2), reason=reason,
                pnl_pct_notional=round(nom, 3), pnl_pct_margin=round(net / MARGIN * 100, 3),
@@ -164,11 +170,12 @@ def watch_once():
         adv = adverse_pct(r["side"], r["entry_price"], px)
         r["mae"] = max(r.get("mae", px), px) if r["side"] == "short" else min(r.get("mae", px), px)
         hold_h = (now_ms - r["entry_ms"]) / 3600_000
-        if adv >= STOP_PCT:
-            close_row(r, r["entry_price"] * ((1 + STOP_PCT / 100) if r["side"] == "short"
-                                             else (1 - STOP_PCT / 100)), f"스탑-{STOP_PCT:.0f}%", now_ms)
-        elif hold_h >= HOLD_H:
-            close_row(r, px, f"{HOLD_H}h만기", now_ms)
+        cfg = MODES[r.get("mode", "swing")]
+        if adv >= cfg["stop"]:
+            close_row(r, r["entry_price"] * ((1 + cfg["stop"] / 100) if r["side"] == "short"
+                                             else (1 - cfg["stop"] / 100)), f"스탑-{cfg['stop']:.0f}%", now_ms)
+        elif hold_h >= cfg["hold_h"]:
+            close_row(r, px, f"{cfg['hold_h']}h만기", now_ms)
         else:
             keep.append(r)
     if len(keep) != len(rows):
@@ -179,22 +186,30 @@ def status():
     rows = load()
     done = list(csv.DictReader(open(OUT, encoding="utf-8"))) if OUT.exists() else []
     picks_done = len({r["pick_id"] for r in done})
-    print(f"[사용자 픽 검정] 완료 {picks_done}/30건 | 보유 중 {len({r['pick_id'] for r in rows})}건")
+    for m in MODES:
+        dm = len({r["pick_id"] for r in done if (r.get("mode") or "swing") == m})
+        om = len({r["pick_id"] for r in rows if r.get("mode", "swing") == m})
+        print(f"[{m:5s}] 완료 {dm}/30건 | 보유 중 {om}건")
     for r in rows:
         try:
             px = mark(r["symbol"])
             adv = adverse_pct(r["side"], r["entry_price"], px)
-            print(f"  {r['kind']:8s} {r['coin']:10s} {r['side']:5s} 명목 {-adv:+6.2f}% "
-                  f"({(time.time()*1000 - r['entry_ms'])/3600000:.1f}h 경과)")
+            cfg = MODES[r.get("mode", "swing")]
+            print(f"  [{r.get('mode','swing'):5s}] {r['kind']:8s} {r['coin']:10s} {r['side']:5s} "
+                  f"명목 {-adv:+6.2f}% ({(time.time()*1000 - r['entry_ms'])/3600000:.1f}/{cfg['hold_h']}h)")
         except Exception:
             print(f"  {r['kind']:8s} {r['coin']:10s} 조회실패")
 
 
-def evaluate():
+def evaluate(mode="swing"):
     import numpy as np
     if not OUT.exists():
         print("표본 없음"); return
-    rows = list(csv.DictReader(open(OUT, encoding="utf-8")))
+    rows = [r for r in csv.DictReader(open(OUT, encoding="utf-8"))
+            if (r.get("mode") or "swing") == mode]
+    if not rows:
+        print(f"[{mode}] 표본 없음"); return
+    print(f"=== 트랙: {mode} (스탑 -{MODES[mode]['stop']:.0f}% / {MODES[mode]['hold_h']}h) ===")
     by = {}
     for r in rows:
         by.setdefault(r["pick_id"], {})[r["kind"]] = r
@@ -236,11 +251,12 @@ def evaluate():
 def main():
     a = sys.argv[1:]
     if a and a[0] == "add":
-        add(a[1], a[2] if len(a) > 2 else "long")
+        add(a[1], a[2] if len(a) > 2 else "long", a[3] if len(a) > 3 else "swing")
     elif a and a[0] == "status":
         status()
     elif a and a[0] == "eval":
-        evaluate()
+        for m in ([a[1]] if len(a) > 1 else list(MODES)):
+            evaluate(m); print()
     else:
         log(f"=== 사용자 픽 모의 감시 시작 (스탑 -{STOP_PCT:.0f}% / {HOLD_H}h / 주문 없음) ===")
         while True:

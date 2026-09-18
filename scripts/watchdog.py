@@ -111,6 +111,8 @@ HANG_CHECK_OVERRIDE_SEC["user_pick_paper"] = 21600
 HANG_CHECK_OVERRIDE_SEC["cusum_long_alert"] = 21600  # I/O바운드 폴링
 # ob_collector: 5초 REST 폴링 I/O바운드 — 위와 같은 이유로 문턱 완화.
 HANG_CHECK_OVERRIDE_SEC["ob_collector"] = 21600
+# breadth_cool_alert: 5분 sleep 폴링 — CPU 무변화가 정상.
+HANG_CHECK_OVERRIDE_SEC["breadth_cool_alert"] = 21600
 # tg_bot: 그 자체는 매매 안 하지만 margin_manual_long_trader의 실질적 안전망(15초 폴링으로
 # 트레일링/손절을 직접 처리)이라 6시간까지는 안 늘리고 core_trader/core_leveraged와 같은
 # 90분으로 절충 — 오탐 소음은 없애되 진짜 행 상태는 비교적 빨리 잡음.
@@ -284,6 +286,7 @@ BOTS = {
     # 35초마다 재시작되며 텔레그램 재시작 알림 스팸 — 원인 진단 후 복구.
     # "quiet_accum_screener":  ROOT / "scripts" / "quiet_accum_screener.py",   # #47 조용한 매집 스크리너 (거래대금상위+안오름+OFI매수우위 겹침, 순수로깅·매매0)
     "breadth_monitor":       ROOT / "scripts" / "breadth_monitor.py",       # 시장전체 로테이션(breadth) 배경모니터 (순수로깅·매매0) — 2026-08-20 상관리스크 분석에 실사용된 전례로 존치가치 확인
+    "breadth_cool_alert":    ROOT / "scripts" / "breadth_cool_alert.py",    # ★ 2026-09-18 알트 동반상승 식음 텔레그램 알림(주문없음·상주, 사용자 요청)
     # "whale_print_paper_trader" 은퇴 (2026-07-21): forward 1,733건 재판정 결과 day-clustered t-4.57,
     # 비용후 평균-0.85% — 통계적 확정손실. 원 가설(BLUR n=1) 반증됨. STRATEGY.md 참조.
     # "whale_print_paper_trader": ROOT / "scripts" / "whale_print_paper_trader.py",

@@ -188,7 +188,7 @@ FUT_MARGIN_PER_TRADE = 120.0
 #   펀딩·외부청산 관리는 유지된다 — armed_engines에서 빼면 청산까지 막히므로 이 스위치를 쓴다
 #   (완화봇 2026-09-01 방식과 동일). 재개하려면 True로.
 # ★ 2026-09-18 사용자 지시("원본봇도 다시 켜"): 재개. CUSUM은 꺼진 상태 유지.
-NEW_ENTRY_ENABLED = True
+NEW_ENTRY_ENABLED = False
 
 # ★ 2026-08-26: 마진 담보비율 경보 단계. 1.3 강제청산 / 1.5 신규진입 차단(margin_guard._gate).
 ML_ALERT_LEVELS = [2.0, 1.7, 1.5, 1.4]

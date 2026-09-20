@@ -101,7 +101,7 @@ POLL_SEC = 60  # ★ 2026-08-10: 300→60. 3개AI(ChatGPT·제미나이·Manus) 
 #   재개 이유는 원본봇이 4~5일에 1건뿐이라 빈도가 너무 낮아서(완화봇은 하루 2.4건).
 # ★ 2026-09-17 사용자 지시("신규진입 중단하자"): 차단.
 # ★ 2026-09-18 사용자 지시("다시 숏완화 해보자"): 재개. CUSUM도 함께 다시 켠다(아래 CUSUM_ENABLED).
-NEW_ENTRY_ENABLED = True
+NEW_ENTRY_ENABLED = False
 PUMP_PCT = 15.0
 PUMP_PCT_MAX = 30.0
 LOOKBACK_H = 7             # ★ 7시간 상승률 기준 (2026-07-22: 6→7, TRAIN t 기준 재선정)

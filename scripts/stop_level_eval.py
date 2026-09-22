@@ -1,4 +1,4 @@
-"""PREREG_STOP_LEVEL.md 실행 — 손절선 명목 40% vs 30% vs 25% 짝비교.
+"""PREREG_STOP10.md 실행 — 손절선 명목 40%(현행) vs 5%(증거금-10%) vs 7.5%(증거금-15%) 짝비교.
 
 Run: .venv/Scripts/python.exe scripts/stop_level_eval.py
 """
@@ -16,9 +16,9 @@ LEDGERS = [("원본", "data/margin_short_ledger.csv"), ("완화", "data/margin_s
 LEV = 2.0
 FEE_SIDE = 0.0006      # 명목, 체결 1회당
 STOP_EXTRA = 0.0005    # 손절 슬리피지, 명목
-LEVELS = [40.0, 30.0, 25.0]   # 명목 %. 주 비교 = 30.0, 25.0은 강건성 병기
+LEVELS = [40.0, 5.0, 7.5]     # 명목 %. 2026-09-22: PREREG_STOP10.md — 주 비교 5.0(증거금-10%), 7.5(증거금-15%,병기)
 BASE = 40.0
-MAIN = 30.0
+MAIN = 5.0
 SEED, BOOT, BLOCK_DAYS = 20260918, 4000, 7
 CACHE = "data/_stop_kl_cache.json"
 SLEEP = 0.35
@@ -129,7 +129,7 @@ def desc(tag, x):
 
 def main():
     tr = load_trades()
-    print(f"[손절선 재검정] 사전등록 docs/PREREG_STOP_LEVEL.md (커밋 8a230b3)")
+    print(f"[손절선 재검정: 증거금 -10%/-15%] 사전등록 docs/PREREG_STOP10.md (커밋 c8143a3)")
     print(f"청산 완료 숏 거래 {len(tr)}건 (이상치 제외). 5분봉 경로 재현 중...\n", flush=True)
 
     ok = []

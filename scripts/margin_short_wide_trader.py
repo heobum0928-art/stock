@@ -885,6 +885,28 @@ def main():
                         del positions[sym]
                         _save(POS_PATH, positions)
                         continue
+                    # ★ 2026-09-22(사용자 요청 "봇으로 중간중간 체크"): 포지션은 살아있는데 실제
+                    #   수량·평단이 봇 기록과 다른 경우(사용자가 봇 포지션에 수동 불타기) 장부 동기화.
+                    #   안전 자체는 이미 확보돼 있다 — place_protective_stop()이 closePosition=true라
+                    #   수량과 무관하게 트리거 시 전체 청산된다(WETUSDT 717개 불타기 실측으로 확인,
+                    #   algoId 4000001917206870 그대로 유효). 이 블록은 봇의 손익·MFE/MAE 계산이
+                    #   낡은 수량·평단을 쓰지 않도록 **기록만** 맞춘다. 손절 재등록은 하지 않는다
+                    #   (이미 살아있는 closePosition 스탑을 건드릴 이유가 없다 — 취소→재등록 사이의
+                    #   무보호 구간을 만들 뿐이다).
+                    elif pos.get("venue", "margin") == "futures":
+                        rp = get_futures_position(sym)
+                        if rp and abs(rp["amt"]) > 0:
+                            real_qty, real_entry = abs(rp["amt"]), rp["entry"]
+                            if pos.get("qty") and abs(real_qty - pos["qty"]) > pos["qty"] * 0.01:
+                                log.warning(f"★{sym} 수량 불일치 감지 — 봇기록 {pos['qty']:g} vs 실제 "
+                                            f"{real_qty:g}(평단 {real_entry:g}) → 봇 기록을 실제로 동기화")
+                                try:
+                                    notify.send(f"[완화] 🔧 {sym} 포지션 수량 변경 감지(수동 조작 추정) — "
+                                                f"봇기록 {pos['qty']:g}개→실제 {real_qty:g}개로 동기화. "
+                                                f"서버측 손절은 수량 무관 전량청산이라 계속 유효합니다.")
+                                except Exception: pass
+                                pos["qty"], pos["entry_price"] = real_qty, real_entry
+                                _save(POS_PATH, positions)
                 # ★ 2026-07-27: 청산구조(트레일링·손절폭) 변경은 3개 AI(제미나이·챗GPT·마누스) 공통권고로
                 #   "지금 표본(n=2)으론 시기상조, 표본 더 쌓고 절제백테 먼저"로 보류되어 MFE/MAE만 그림자
                 #   기록해왔음. ★ 2026-08-10: 그 사이 실거래(COOKIE +6%→-25%, TST +24%→-4.5%)에서

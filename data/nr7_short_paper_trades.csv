@@ -1,0 +1,6 @@
+date,symbol,side,entry,exit,exit_reason,net_pnl_pct_notional
+2026-09-30,LSKUSDT,S,0.29108,0.28508,close,1.9847
+2026-09-30,ENAUSDT,L,0.26118,0.26473,close,1.2392
+2026-09-30,AKEUSDT,L,0.033742,0.031683,close,-6.2222
+2026-09-30,WLDUSDT,L,0.5222,0.5353,close,2.3886
+2026-10-01,SUIUSDT,S,1.138,1.1767,close,-3.4089

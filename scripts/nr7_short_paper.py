@@ -31,7 +31,7 @@ for s in perps:
 new=not os.path.exists(TR)
 with open(TR,'a',newline='',encoding='utf-8') as f:
     w=csv.writer(f)
-    if new: w.writerow(['date','symbol','side','entry','exit','exit_reason','net_pnl_pct_notional'])
+    if new: w.writerow(['date','symbol','side','entry','exit','exit_reason','net_pnl_pct_notional','adverse_pct','favorable_pct','close_ret_pct','range_pct'])
     for d in days:
         vols={}
         for s,v in D.items():
@@ -59,5 +59,16 @@ with open(TR,'a',newline='',encoding='utf-8') as f:
                 if side=='L' and l<=stop: ex=stop;why='stop';break
                 if side=='S' and h>=stop: ex=stop;why='stop';break
             r=(ex/entry-1) if side=='L' else (entry/ex-1)
-            w.writerow([d.isoformat(),s,side,entry,ex,why,round((r-0.0012)*100,4)]); print(d,s,side,f'{(r-0.0012)*100:+.2f}%',why)
+            # 진입 이후 일중 극단(모의 변형 분석용): 숏이면 최고가가 불리, 최저가가 유리
+            after=[];st2=False
+            for h,l,c in hb:
+                if not st2:
+                    if (side=='L' and h>hi) or (side=='S' and l<lo): st2=True
+                    else: continue
+                after.append((h,l,c))
+            mx=max(a[0] for a in after);mn=min(a[1] for a in after);cl=hb[-1][2]
+            adv=(entry-mn)/entry if side=='L' else (mx-entry)/entry
+            fav=(mx-entry)/entry if side=='L' else (entry-mn)/entry
+            cr=(cl/entry-1) if side=='L' else (entry/cl-1)
+            w.writerow([d.isoformat(),s,side,entry,ex,why,round((r-0.0012)*100,4),round(adv*100,3),round(fav*100,3),round((cr-0.0012)*100,4),round((hi-lo)/lo*100,3)]); print(d,s,side,f'{(r-0.0012)*100:+.2f}%',why)
 print('완료',days[0],'~',days[-1])

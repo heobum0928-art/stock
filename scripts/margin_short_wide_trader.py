@@ -53,6 +53,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import requests
 from bithumb import notify
+from bithumb.delist_guard import is_delist_blocked  # 2026-10-03: 상장폐지 공지 30일 이내 코인 숏 차단
 from bithumb.margin_guard import (MarginGuard, live_status, get_margin_usdt, load_config,
                                   get_margin_level,
                                   get_borrowed, get_held, _bid_multiplier_up)
@@ -1315,6 +1316,13 @@ def main():
                 # ★ 2026-09-02: 레짐 차단(변동장/BTC강세장)은 여기서 — 위쪽 신규상장 모의롱
                 #   기록은 이미 끝났고, 이 아래는 실제 돈이 나가는 진입뿐이다.
                 if regime_blocked:
+                    continue
+
+                # ★ 2026-10-03: 바이낸스 상장폐지 공지 후 30일 이내 코인은 숏 금지 — 투기성 급등(숏 스퀴즈)이 잦다.
+                #   근거: 모의 #14(공지 후 선물 숏 68건 중 4건 +100%↑, 평균 -17.6%)와 실거래 HFT 숏 1건(-112 USDT, 전체 손실의 36%).
+                #   조회 실패 시 차단하지 않는다(fail-open). 공지 API는 인증 불필요(bithumb/delist_guard.py).
+                if is_delist_blocked(coin):
+                    log.info(f"[완화] 상장폐지 공지 코인 숏 차단 {sym}({LOOKBACK_H}h+{ret6h:.0f}%)")
                     continue
 
                 if CUSUM_ENABLED:

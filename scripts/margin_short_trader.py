@@ -1444,6 +1444,7 @@ def main():
                                           "exit_ts": now + HOLD_H*3600, "entry_iso": datetime.now(KST).isoformat(), "live": True,
                                           "btc_entry": tick.get("BTCUSDT", (None,))[0],
                                           "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
+                        _save(POS_PATH, positions)  # 2026-10-03: 진입 직후 즉시 저장(크래시 시 고아 포지션 방지, 감사 10/02)
                         # ★ 2026-08-24: 진입 직후 서버측 손절 등록 — 선물 경로와 같은 보호수준으로 맞춤.
                         #   실패해도 포지션은 유지되고 봇 폴링 손절이 계속 작동한다(무보호 아님).
                         sres = {"skip": "SERVER_STOP_MARGIN=False"}
@@ -1513,6 +1514,7 @@ def main():
                                           "stop_order_id": res.get("stop_order_id"),
                                           "stop_price": res.get("stop_price"),   # ★ 2026-09-06
                                           "listing_age_days": _listing_age_days(coin, listing_age_cache), "qvol_24h": round(qvol)}
+                        _save(POS_PATH, positions)  # 2026-10-03: 진입 직후 즉시 저장(크래시 시 고아 포지션 방지, 감사 10/02)
                         if not res.get("stop_verified"):
                             log.error(f"🚨 {sym} 서버측 스탑주문 검증 실패 — 무보호 상태일 수 있음, 수동 확인 필요")
                             # ★ 2026-08-20(기록감사 발견): 위 log.error는 로그파일에만 남고

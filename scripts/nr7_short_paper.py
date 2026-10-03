@@ -23,16 +23,35 @@ else:
     start=dt.date.fromisoformat(last)+dt.timedelta(1) if last else yday
     days=[start+dt.timedelta(i) for i in range((yday-start).days+1)]
 if not days: print('보충할 날 없음'); sys.exit()
-first=min(days)-dt.timedelta(40)
+first=min(days)-dt.timedelta(70)
 D={}
 for s in perps:
     r=get('/fapi/v1/klines',symbol=s,interval='1d',startTime=ms(first),endTime=ms(max(days))+86399999,limit=100)
     if r: D[s]={dt.datetime.fromtimestamp(k[0]/1000,dt.timezone.utc).date():(float(k[2]),float(k[3]),float(k[4]),float(k[7])) for k in r}
+
+_rk={}
+def _key_ret(d):
+    """d 종가 → d+1 종가, 직전 30일 거래대금 상위 20(알트) 균등 수익 (#40 정의와 동일)."""
+    if d in _rk: return _rk[d]
+    vols={}
+    for s_,v_ in D.items():
+        w_=[v_.get(d-dt.timedelta(i)) for i in range(1,31)]
+        if all(w_) and d in v_ and d+dt.timedelta(1) in v_: vols[s_]=sum(a[3] for a in w_)
+    top_=sorted(vols,key=vols.get,reverse=True)[:20]
+    _rk[d]=(sum(D[s_][d+dt.timedelta(1)][2]/D[s_][d][2]-1 for s_ in top_)/len(top_)) if len(top_)>=10 else None
+    return _rk[d]
+def alt30(d):
+    rs_=[_key_ret(d-dt.timedelta(i)) for i in range(2,32)]  # 정정 2026-10-03: 진입일 당일 종가가 섞이지 않게 d-1 종가까지의 마감된 30일
+    if any(x is None for x in rs_): return None
+    p_=1.0
+    for x in rs_: p_*=1+x
+    return p_-1
 new=not os.path.exists(TR)
 with open(TR,'a',newline='',encoding='utf-8') as f:
     w=csv.writer(f)
-    if new: w.writerow(['date','symbol','side','entry','exit','exit_reason','net_pnl_pct_notional','adverse_pct','favorable_pct','close_ret_pct','range_pct'])
+    if new: w.writerow(['date','symbol','side','entry','exit','exit_reason','net_pnl_pct_notional','adverse_pct','favorable_pct','close_ret_pct','range_pct','alt30_regime','regime_down'])
     for d in days:
+        reg=alt30(d)
         vols={}
         for s,v in D.items():
             x=[v.get(d-dt.timedelta(i)) for i in range(1,31)]
@@ -70,5 +89,5 @@ with open(TR,'a',newline='',encoding='utf-8') as f:
             adv=(entry-mn)/entry if side=='L' else (mx-entry)/entry
             fav=(mx-entry)/entry if side=='L' else (entry-mn)/entry
             cr=(cl/entry-1) if side=='L' else (entry/cl-1)
-            w.writerow([d.isoformat(),s,side,entry,ex,why,round((r-0.0012)*100,4),round(adv*100,3),round(fav*100,3),round((cr-0.0012)*100,4),round((hi-lo)/lo*100,3)]); print(d,s,side,f'{(r-0.0012)*100:+.2f}%',why)
+            w.writerow([d.isoformat(),s,side,entry,ex,why,round((r-0.0012)*100,4),round(adv*100,3),round(fav*100,3),round((cr-0.0012)*100,4),round((hi-lo)/lo*100,3),('' if reg is None else round(reg,4)),('' if reg is None else int(reg<=0))]); print(d,s,side,f'{(r-0.0012)*100:+.2f}%',why)
 print('완료',days[0],'~',days[-1])

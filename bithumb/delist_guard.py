@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "data" / "delist_blocklist.json"
 URL = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
 BLOCK_DAYS = 30
+# ★ 2026-10-04: 그림자 모드. 급등 숏 8,801건 중 공지 후 30일 이내 117건이 오히려 평균 +5.81% (나머지 -2.09%, 로그 10-04 (2)) —
+#   차단 근거가 뒤집혀 실제 차단은 끄고 "차단했을 건"만 data/delist_guard_shadow.csv에 기록한다. 되돌리려면 True.
+ENABLED = False
 REFRESH_SEC = 6 * 3600
 _STOP = {"USDT", "USDC", "BUSD", "FDUSD", "BTC", "ETH", "BNB", "AND", "THE", "WILL", "ON", "SPOT", "MARGIN", "FUTURES",
          "PERPETUAL", "CONTRACT", "CONTRACTS", "TOKEN", "TOKENS", "DELIST", "REMOVAL", "TRADING", "PAIRS", "NOTICE", "OF",
@@ -80,8 +83,27 @@ def blocked_coins() -> dict:
     return {c: t for c, t in coins.items() if (now - t) / 86400 <= BLOCK_DAYS}
 
 
+def _shadow_log(coin: str, ann_ts: float) -> None:
+    try:
+        f = ROOT / "data" / "delist_guard_shadow.csv"
+        new = not f.exists()
+        with open(f, "a", encoding="utf-8") as fh:
+            if new:
+                fh.write("time_utc,coin,announced_utc,days_since_announce"+chr(10))
+            now = time.time()
+            fh.write(f"{datetime.fromtimestamp(now, timezone.utc).isoformat(timespec='seconds')},{coin},{datetime.fromtimestamp(ann_ts, timezone.utc).isoformat(timespec='seconds')},{(now-ann_ts)/86400:.1f}"+chr(10))
+    except Exception:
+        pass
+
+
 def is_delist_blocked(coin: str) -> bool:
     try:
-        return coin.upper() in blocked_coins()
+        ann = blocked_coins().get(coin.upper())
+        if ann is None:
+            return False
+        if ENABLED:
+            return True
+        _shadow_log(coin.upper(), ann)  # 그림자 모드: 차단하지 않고 기록만
+        return False
     except Exception:
         return False

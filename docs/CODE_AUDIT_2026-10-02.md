@@ -12,3 +12,20 @@
 | 6 | `rsi_trader`·`cascade_trader`·`accum_trader`: 시작 시 보유 코인 제외 목록 조회 실패가 조용히 삼켜짐(로그 없음) | 미확인 |
 
 권장(사용자 결정): #2는 진입 직후 즉시 저장(`_save(POS_PATH, positions)`를 `positions[sym]=` 바로 뒤에)하는 한 줄 보강이 가장 값어치가 크다 — 실제 돈이 걸린 위험이며 구현 위험은 낮다. #1은 자동 캡 이동이 의도된 설계인지 사용자가 확인.
+
+---
+
+## 2026-10-05 추가 (클라우드 감사 10-04 실행분, 로컬 재확인)
+
+이미 기록된 항목(#1 캡 자동 이동, #2 진입 직후 저장)은 중복 기재하지 않는다. 새로 확인한 것:
+
+| # | 발견(루틴) | 로컬 재확인 |
+|---|---|---|
+| 4 | 청산 함수가 체결가를 돌려주지 않아 손익이 주문 전 조회가로 계산됨 | **확인됨** — `margin_guard.py:436-439` `close_short()`는 `close_usdt`만, `binance_guard.py:610-612` `close_short_futures()`는 `{"live","result"}`뿐(가격 필드 없음). 진입 쪽만 체결가 반환으로 고쳐져 있음. 51건 관문 표본에 슬리피지만큼 체계 오차 가능(수정은 사용자 결정) |
+| 3 | `newlisting_monitor.py` 재시작 시 포지션 소실 | **확인됨(코드 :67 `_positions = {}`, `load_pos` 없음)**. 단 `data/live_config.json`의 armed가 비어 있어 **실거래 아님**(모의 추적 한정) |
+| 7 | `core_trader.py`가 `record_realized`를 부르지 않아 일일손실 관문 무력 | **확인됨(grep 0건)**. 단 같은 이유로 실거래 아님 → 영향 없음 |
+| 8 | `margin_guard.py:433-435` 주문 예외 시 `log.error` 없이 원장만 기록, `:420` "대출수량 0" 반환은 로그·원장 모두 없음 | **확인됨** (선물 쪽 `binance_guard`는 로그를 남겨 비대칭) |
+| 9 | `margin_short_wide_trader.py:662` `h or 0.0` — `get_held` 조회 실패(None)를 0으로 처리 | **확인됨**. 잔량을 크게 잡는 방향이라 "이미 청산" 오판은 아님 — 위험 낮음 |
+| 5 | `FUT_MARGIN_PER_TRADE` 120 vs 80 | **확인됨**(`margin_short_trader.py:189`=120, `margin_short_wide_trader.py:205`=80). 의도된 차이인지 사용자 확인 |
+
+코드는 수정하지 않았다.

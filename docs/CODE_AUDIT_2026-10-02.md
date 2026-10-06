@@ -29,3 +29,17 @@
 | 5 | `FUT_MARGIN_PER_TRADE` 120 vs 80 | **확인됨**(`margin_short_trader.py:189`=120, `margin_short_wide_trader.py:205`=80). 의도된 차이인지 사용자 확인 |
 
 코드는 수정하지 않았다.
+
+---
+
+## 2026-10-06 추가 (클라우드 감사 10-05 실행분, 로컬 재확인)
+
+이미 기록된 항목(#1~#9)은 중복 기재하지 않는다. 로그 요약에서 읽힌 새 항목(원문은 일부 잘려 보임):
+
+| # | 발견(루틴) | 로컬 재확인 |
+|---|---|---|
+| 10 | `margin_guard.py` 보조 조회(`_price`·`_symbol_filters`·`_price_tick`)가 실패 시 로그 없이 0.0/기본값 반환, `_price`는 try/except 자체 없음 | **확인됨** — `margin_guard.py:143-167`. 호출부의 `price<=0` 검사로 대부분 완화(잔고 조회 버그 계열이지만 위험 낮음) |
+| 11 | `binance_guard._mark_price`가 예외 시 로그 없이 0.0 반환 | **확인됨** — `binance_guard.py:205-213` |
+| 12 | `binance_guard.rebalance_long`이 수량 단위를 `round(...,3)`(0.001)로 고정(거래소 조회 없음), `core_leveraged.MIN_QTY_STEP_BTC`와 숫자 중복 | **확인됨** — `binance_guard.py:380`. BTC 한정이라 현재 영향 없음, 한쪽만 바뀌면 어긋남 |
+
+코드는 수정하지 않았다.

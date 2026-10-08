@@ -47,7 +47,7 @@ from bithumb.delist_guard import is_delist_blocked  # 2026-10-03: 상장폐지 �
 from bithumb.margin_guard import (MarginGuard, live_status, get_margin_usdt, load_config,
                                   get_margin_level,
                                   get_borrowed, get_held, _bid_multiplier_up)
-from bithumb.binance_guard import (BinanceGuard, load_config as load_futures_config, get_futures_usdt,
+from bithumb.binance_guard import (BinanceGuard, engine_leverage, load_config as load_futures_config, get_futures_usdt,
                                    get_futures_position, _signed as _fut_signed)
 from bithumb.margin_guard import _signed as _mgn_signed
 
@@ -1484,7 +1484,7 @@ def main():
                             try: notify.send(f"🚨 {sym} 마진숏 서버측 손절 등록 실패 — 봇 폴링만 유효, 확인 필요")
                             except Exception: pass
                         log.warning(f"★실전 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개 (서버스탑={positions[sym].get('stop_order_id')})")
-                        try: notify.send(f"📉 마진숏 진입 {sym} {LOOKBACK_H}h+{ret2h:.0f}% (증거금{margin:.0f}USDT)")
+                        try: notify.send(f"[숏진입] 원본·마진 {sym} {load_config().get('leverage', 2)}배 증거금{margin:.0f} 급등+{ret2h:.0f}%")
                         except Exception: pass
                     else:
                         log.info(f"마진 진입 dry/실패 {sym}: {res}")
@@ -1533,7 +1533,7 @@ def main():
                             try: notify.send(f"🚨 {sym} 서버측 스탑 등록 실패 — 무보호 포지션, 수동 확인 필요")
                             except Exception: pass
                         log.warning(f"★실전 선물숏 진입(마진대출폴백) {sym} {LOOKBACK_H}h+{ret2h:.0f}% 증거금{margin:.0f} → {res['qty']}개 (서버스탑={res.get('stop_order_id')})")
-                        try: notify.send(f"📉 선물숏 진입(마진폴백) {sym} {LOOKBACK_H}h+{ret2h:.0f}% (증거금{margin:.0f}USDT, 서버스탑{'OK' if res.get('stop_verified') else '실패!'})")
+                        try: notify.send(f"[숏진입] 원본·선물 {sym} {engine_leverage(FUTURES_ENGINE)}배 증거금{margin:.0f} 급등+{ret2h:.0f}% 손절{'OK' if res.get('stop_verified') else '실패!'}")
                         except Exception: pass
                     else:
                         log.info(f"선물 진입 dry/실패 {sym}: {res}")

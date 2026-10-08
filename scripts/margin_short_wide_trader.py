@@ -57,7 +57,7 @@ from bithumb.delist_guard import is_delist_blocked  # 2026-10-03: 상장폐지 �
 from bithumb.margin_guard import (MarginGuard, live_status, get_margin_usdt, load_config,
                                   get_margin_level,
                                   get_borrowed, get_held, _bid_multiplier_up)
-from bithumb.binance_guard import (BinanceGuard, load_config as load_futures_config, get_futures_usdt,
+from bithumb.binance_guard import (BinanceGuard, engine_leverage, load_config as load_futures_config, get_futures_usdt,
                                    get_futures_position, _signed as _fut_signed)
 from bithumb.margin_guard import _signed as _mgn_signed
 
@@ -836,7 +836,7 @@ def main():
                         venue = pos.get("venue", "margin")
                         venue_tag = "선물" if venue == "futures" else "마진"
                         g = fut_guard if venue == "futures" else guard
-                        lev = (load_futures_config() if venue == "futures" else load_config()).get("leverage", 2)
+                        lev = (engine_leverage(FUTURES_ENGINE) if venue == "futures" else load_config().get("leverage", 2))
                         fill, real = external_exit_fill(sym, venue, pos.get("entry_ts", now))
                         xpx = fill if fill else px
                         if pos.get("stop_order_id"):      # 고아 조건주문 정리
@@ -984,7 +984,7 @@ def main():
                 stop_hit = px >= pos["entry_price"] * (1 + STOP_PCT/100)
                 cur_pnl_pct = (1 - px/pos["entry_price"]) * 100
                 # 2026-08-25: 역행 경보(알림 전용, 주문 없음) — 상세는 ALERT_DD_LEVELS 주석.
-                _lev = (load_futures_config() if pos.get("venue") == "futures" else load_config()).get("leverage", 2)
+                _lev = (engine_leverage(FUTURES_ENGINE) if pos.get("venue") == "futures" else load_config().get("leverage", 2))
                 dd = -cur_pnl_pct * _lev          # 증거금 기준 손실(양수 = 손실)
                 if pos.get("live") and dd >= min(ALERT_DD_LEVELS):
                     urgent = True
@@ -1050,7 +1050,7 @@ def main():
                 venue = pos.get("venue", "margin")   # 옛 포지션(필드 없음) = 마진으로 취급(원래 유일 경로였음)
                 if venue == "futures":
                     cres = fut_guard.close_short_futures(pos["coin"], stop_order_id=pos.get("stop_order_id"))
-                    lev = load_futures_config().get("leverage", 2)
+                    lev = engine_leverage(FUTURES_ENGINE)
                     venue_tag = "선물"
                 else:
                     # ★ 2026-08-24: 서버측 숏스탑 취소(고아주문 방지) + 이미 그 스탑이 체결됐으면

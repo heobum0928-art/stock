@@ -141,6 +141,33 @@ def _synced_timestamp() -> int:
     return int(time.time() * 1000) + _time_offset["ms"]
 
 
+def engine_leverage(engine: str, cfg: dict | None = None) -> int:
+    """엔진별 레버리지 — cfg["leverage_by_engine"][engine]가 있으면 그것, 없으면 전역 cfg["leverage"](기본 2).
+    2026-10-08: 완화봇만 5배로 올리고 core_lev(BTC 롱)는 2배로 두기 위한 분리. 키가 없으면 기존과 동일."""
+    cfg = cfg if cfg is not None else load_config()
+    try:
+        v = (cfg.get("leverage_by_engine") or {}).get(engine, cfg.get("leverage", 2))
+        return max(1, int(v))
+    except Exception:
+        return max(1, int(cfg.get("leverage", 2)))
+
+
+def _open_short_notional():
+    """현재 열린 선물 숏 총 명목(USDT). 조회 실패는 None(호출부가 안전상 진입 보류)."""
+    try:
+        r = _signed("GET", "/fapi/v2/positionRisk", {})
+        if r.status_code != 200:
+            return None
+        tot = 0.0
+        for p in r.json():
+            amt = float(p.get("positionAmt", 0) or 0)
+            if amt < 0:
+                tot += abs(amt) * float(p.get("markPrice", 0) or 0)
+        return tot
+    except Exception:
+        return None
+
+
 def _signed(method, path, params=None):
     key, sec = _keys()
     params = params or {}
@@ -306,7 +333,7 @@ class BinanceGuard:
         if cap is None:
             return False, f"{self.engine} 자본가드 미설정"
         # 명목노출/레버리지 = 증거금. 증거금이 엔진상한·전체상한 넘으면 차단
-        lev = max(1, cfg.get("leverage", 2))
+        lev = max(1, engine_leverage(self.engine, cfg))
         margin = notional_usdt / lev
         if margin > cap:
             return False, f"엔진 증거금상한 초과({margin:.1f}>{cap})"
@@ -497,17 +524,32 @@ class BinanceGuard:
         가드 통과 시에만 실주문.
         stop_pct 지정 시 진입 직후 거래소 서버측 STOP_MARKET 보호주문을 같이 등록(2026-08-07)."""
         cfg = load_config()
-        ok, reason = self._gate(margin_usdt * cfg.get("leverage", 2))
+        lev = engine_leverage(self.engine, cfg)
+        ok, reason = self._gate(margin_usdt * lev)
         if not ok:
             log.info(f"[{self.engine}] 선물숏진입 차단(dry) {coin} 증거금{margin_usdt} — {reason}")
             self._ledger("open_short_fut", 0, margin_usdt, f"DRY:{reason}")
             return {"dry": True, "reason": reason}
+        # ★ 2026-10-08: 총 열린 숏 명목 상한(선택 키 max_total_short_notional_usdt, 없으면 미적용).
+        #   게이트는 주문 1건의 증거금만 봐서 동시 포지션 수·총 노출에는 한도가 없었다.
+        cap_total = cfg.get("max_total_short_notional_usdt")
+        if cap_total:
+            cur_n = _open_short_notional()
+            if cur_n is None:
+                reason = "총 노출 조회 실패(안전상 진입 보류)"
+                log.error(f"[{self.engine}] 선물숏진입 보류 {coin} — {reason}")
+                self._ledger("open_short_fut", 0, margin_usdt * lev, f"DRY:{reason}")
+                return {"dry": True, "reason": reason}
+            if cur_n + margin_usdt * lev > float(cap_total):
+                reason = f"총 열린 숏 명목 상한 초과({cur_n:.0f}+{margin_usdt*lev:.0f}>{float(cap_total):.0f})"
+                log.info(f"[{self.engine}] 선물숏진입 차단(dry) {coin} — {reason}")
+                self._ledger("open_short_fut", 0, margin_usdt * lev, f"DRY:{reason}")
+                return {"dry": True, "reason": reason}
         sym = f"{coin}USDT"
         price = _mark_price(sym)
         if price <= 0:
             log.error(f"[{self.engine}] ★선물숏진입 실패 {sym} — 가격조회 실패(price<=0)")
             return {"error": "price 실패"}
-        lev = cfg.get("leverage", 2)
         notional = margin_usdt * lev
         step, minn = _symbol_filters_futures(sym)
         if notional < minn:
@@ -517,10 +559,15 @@ class BinanceGuard:
         if qty <= 0:
             log.error(f"[{self.engine}] ★선물숏진입 실패 {sym} — 반올림후 수량0(notional={notional:.2f} price={price})")
             return {"error": "수량 0"}
+        # ★ 2026-10-08: 레버리지 설정이 실패하면 거래소가 기존(더 높을 수 있는) 배율로 체결하므로 진입 중단(fail-closed).
         try:
-            _signed("POST", "/fapi/v1/leverage", {"symbol": sym, "leverage": int(lev)})
+            lr = _signed("POST", "/fapi/v1/leverage", {"symbol": sym, "leverage": int(lev)})
+            if lr.status_code != 200:
+                log.error(f"[{self.engine}] ★레버리지 {lev}배 설정 거절({sym}) {lr.text[:120]} — 진입 중단")
+                return {"error": f"레버리지 설정 거절: {lr.text[:120]}"}
         except Exception as e:
-            log.warning(f"[{self.engine}] 레버리지 설정 실패({sym}): {e}")
+            log.error(f"[{self.engine}] ★레버리지 설정 예외({sym}): {e} — 진입 중단")
+            return {"error": f"레버리지 설정 예외: {e}"}
         try:
             r = _signed("POST", "/fapi/v1/order",
                         {"symbol": sym, "side": "SELL", "type": "MARKET", "quantity": qty,
@@ -561,6 +608,7 @@ class BinanceGuard:
             stop_res = self.place_protective_stop(coin, stop_price)
             out["stop_order_id"] = stop_res.get("order_id")
             out["stop_verified"] = stop_res.get("verified", False)
+            out["stop_price"] = stop_res.get("stop_price")   # ★ 2026-09-06 기록 누락 수정
         return out
 
     def close_short_futures(self, coin: str, stop_order_id=None) -> dict:

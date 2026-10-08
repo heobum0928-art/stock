@@ -202,6 +202,18 @@ MIN_QTY_STEP_BTC = 0.001      # binance_guard.rebalance_long()의 round(,3)과 �
 DRIFT_STEP_MULT = 1.5         # 격자의 1.5배는 벌어져야 실제로 조정 가능
 
 
+_ALERT_LAST = {}
+def _alert_once(key, text, min_gap_sec):
+    """텔레그램 알림 도배 방지(2026-10-08 사용자 지시 "이벤트 발생때만"): 같은 key는 min_gap_sec에 한 번만."""
+    import time as _t
+    now = _t.time()
+    if now - _ALERT_LAST.get(key, 0) < min_gap_sec:
+        return
+    _ALERT_LAST[key] = now
+    try: notify.send(text)
+    except Exception: pass
+
+
 def live_rebalance(guard, target_frac, price):
     """실전 모드 — 목표 명목노출까지 가드 통해 실주문.
     증거금 = min(선물잔고, 엔진상한) × target_frac. 명목 = 증거금 × LEVERAGE.
@@ -230,8 +242,9 @@ def live_rebalance(guard, target_frac, price):
             notify.send(f"[CORE-LEV] ★실전 리밸런싱 {target_frac:.0%}×{LEVERAGE:.0f}배 명목{target_notional:.0f}USDT @{price:,.0f}")
         except Exception: pass
     if res.get("dry") or res.get("error"):
-        try: notify.send(f"🚨 [CORE-LEV] 리밸런싱 실패/차단 → {res} — state 유지, 다음 루프 재시도")
-        except Exception: pass
+        # dry(한도 게이트 차단)는 상시 상태라 알림 없음(로그만). 실제 오류만 6시간에 한 번.
+        if res.get("error"):
+            _alert_once("rebal_err", f"🚨 [CORE-LEV] 리밸런싱 오류 → {res}", 6 * 3600)
         return False
     return True   # live(실주문 성공) 또는 skip(이미 목표 근접, 변화<5USDT라 사실상 동기화됨)
 
@@ -299,10 +312,7 @@ def main():
                             if _gap > _tol:
                                 log.warning(f"[LIVE] ★실포지션 괴리 감지 — 목표 {_tgt:.1f} vs 실제 "
                                             f"{pos['notional']:.1f} USDT (차 {_gap:.1f} > 허용 {_tol:.1f}) → 교정")
-                                try:
-                                    notify.send(f"🚨 [CORE-LEV] 실포지션 괴리 교정 — 목표 {_tgt:.0f} vs "
-                                                f"실제 {pos['notional']:.0f} USDT (상태 {s['state']} 유지)")
-                                except Exception: pass
+                                # 2026-10-08: 괴리 교정 알림 제거(한도 차단 시 30분마다 반복) — 로그만.
                                 live_rebalance(guard, target_frac, price)
                         # ★ 2026-08-20(기록감사 발견): docstring이 약속한 "청산위험 70%
                         # 경보"가 모의(mark_to_market) 경로에만 구현돼 있었고, 정작 실제
@@ -317,8 +327,7 @@ def main():
                                        f"(진입 {pos['entry']:,.0f} → 현재 {price:,.0f}, "
                                        f"미실현 {pos['unrealized']:+.1f}USDT) — 서버측 손절 없음, 수동 확인 필요")
                                 log.error(msg)
-                                try: notify.send(msg)
-                                except Exception: pass
+                                _alert_once("liq_risk", msg, 6 * 3600)   # 진짜 위험은 유지하되 6시간에 한 번
             else:      # 모의
                 mark_to_market(s, price)
                 apply_funding(s, price)

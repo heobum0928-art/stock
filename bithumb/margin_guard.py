@@ -114,11 +114,14 @@ def _synced_timestamp() -> int:
     발생 → get_margin_usdt() 등이 조용히 실패해 0.0 반환(잔고 0으로 잘못 표시됨). 서버시각과의
     오프셋을 5분마다 갱신해 보정."""
     now = time.time()
-    if _time_offset["ms"] is None or now - _time_offset["checked_at"] > 300:
+    if _time_offset["ms"] is None or now - _time_offset["checked_at"] > 60:
         try:
+            _t0 = time.time()
             r = requests.get(f"{BASE}/api/v3/time", timeout=5)
+            _t1 = time.time()
             server_ms = r.json()["serverTime"]
-            _time_offset["ms"] = server_ms - int(now * 1000)
+            # ★ 2026-10-08: 왕복 시간의 중간 시점 기준으로 오프셋 계산(기존: 요청 전 시각 기준이라 왕복만큼 앞서 보정됨)
+            _time_offset["ms"] = server_ms - int((_t0 + _t1) / 2 * 1000)
             _time_offset["checked_at"] = now
         except Exception:
             if _time_offset["ms"] is None:
@@ -128,16 +131,29 @@ def _synced_timestamp() -> int:
 
 def _signed(method, path, params=None):
     key, sec = _keys()
-    params = params or {}
-    params["timestamp"] = _synced_timestamp(); params["recvWindow"] = 5000
-    qs = urlencode(params)
-    sig = hmac.new(sec.encode(), qs.encode(), hashlib.sha256).hexdigest()
-    url = f"{BASE}{path}?{qs}&signature={sig}"
+    base_params = dict(params or {})
     headers = {"X-MBX-APIKEY": key}
-    if method == "GET": return requests.get(url, headers=headers, timeout=10)
-    if method == "POST": return requests.post(url, headers=headers, timeout=10)
-    if method == "DELETE": return requests.delete(url, headers=headers, timeout=10)
-    raise ValueError(method)
+    r = None
+    for attempt in (0, 1):
+        params = dict(base_params)
+        params["timestamp"] = _synced_timestamp(); params["recvWindow"] = 5000
+        qs = urlencode(params)
+        sig = hmac.new(sec.encode(), qs.encode(), hashlib.sha256).hexdigest()
+        url = f"{BASE}{path}?{qs}&signature={sig}"
+        if method == "GET": r = requests.get(url, headers=headers, timeout=10)
+        elif method == "POST": r = requests.post(url, headers=headers, timeout=10)
+        elif method == "DELETE": r = requests.delete(url, headers=headers, timeout=10)
+        else: raise ValueError(method)
+        # ★ 2026-10-08: 시각 오류(-1021)는 거래소가 실행 전에 거절한 것이므로(주문 중복 위험 없음)
+        #   즉시 서버시각으로 재동기화하고 한 번 재시도한다.
+        if r.status_code == 400 and attempt == 0:
+            try: code = r.json().get("code")
+            except Exception: code = None
+            if code == -1021:
+                _time_offset["checked_at"] = 0.0
+                continue
+        return r
+    return r
 
 
 def _price(sym):

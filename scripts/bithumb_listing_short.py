@@ -159,6 +159,9 @@ def main():
     from collections import Counter
     print("상장시각 상태:", dict(Counter(v["status"] for v in t0s.values())))
     ev, excl = [], Counter()
+    # ★ 2026-10-09: 전방 모드(날짜 인자)는 48h가 지난 상장까지 계속 포함해야 하므로 상한을 현재 기준으로 갱신.
+    #   고정 MAX_T0(10-06)이면 새 상장이 영원히 표본에 안 들어온다. 기존 재현(인자 없음)은 그대로.
+    max_t0 = (datetime.now(timezone.utc) - timedelta(hours=50)) if len(sys.argv) > 1 else MAX_T0
     for m, v in t0s.items():
         if v["status"] != "ok":
             excl[v["status"]] += 1
@@ -167,7 +170,7 @@ def main():
         if t0 < MIN_T0:
             excl["2021이전"] += 1
             continue
-        if t0 > MAX_T0:
+        if t0 > max_t0:
             excl["최근(48h 미확보)"] += 1
             continue
         ev.append((t0, m))
@@ -200,6 +203,13 @@ def main():
     if n == 0:
         print("표본 없음"); return
     net = np.array([r["raw_short"] - COST + r["fsum"] for r in ok])
+    if len(sys.argv) > 1:   # 전방 기록 저장(갱신 시 전체 재작성)
+        import csv
+        with open(ROOT / "data" / "bithumb_listing_forward.csv", "w", newline="", encoding="utf-8") as _f:
+            _w = csv.writer(_f); _w.writerow(["market", "t0_utc", "net_short_pct", "stopped"])
+            for _r, _x in zip(ok, net):
+                _w.writerow([_r["m"], datetime.fromtimestamp(_r["T"] / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M"),
+                             round(float(_x), 3), _r["stopped"]])
     net2 = np.array([r["raw_short"] - 2 * COST + r["fsum"] for r in ok])
     day = [datetime.fromtimestamp(r["T"] / 1000, timezone.utc).strftime("%Y-%m-%d") for r in ok]
     lo, hi = boot(list(net), day)

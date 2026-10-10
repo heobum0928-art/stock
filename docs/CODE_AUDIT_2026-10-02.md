@@ -69,3 +69,17 @@
 | 18 | 빗썸 현물 `manual/accum/cascade_trader`가 주문 전 호가를 진입가로 기록 | **영향 없음** — 빗썸 현물 `armed_engines=[]`(모의 전용) |
 
 코드는 수정하지 않았다.
+
+---
+
+## 2026-10-10 추가 (클라우드 감사 10-09 실행분, 로컬 재확인)
+
+| # | 발견(루틴) | 로컬 재확인 |
+|---|---|---|
+| 19 | `margin_short_trader.py:1129`가 선물 청산 손익 계산에 `load_futures_config().get("leverage", 2)`를 씀. 10-08 커밋(41d9a9b)이 완화봇만 `engine_leverage(FUTURES_ENGINE)`로 바꿨다 | **확인됨(코드)**, 그러나 **지금은 영향 없음** — `binance_live_config.json`의 `leverage_by_engine`은 `{'mshort_wide_fut': 5}` 하나뿐이라 `mshort_fut`는 어느 쪽 함수로 읽어도 2배다. 원본봇은 신규진입도 꺼져 있다. 누가 `mshort_fut`를 `leverage_by_engine`에 넣는 순간부터 손익·일손실한도 집계가 어긋난다(잠재 위험, 수정은 사용자 결정) |
+| 20 | `_load()`가 예외를 로그 없이 삼키고 기본값 반환(`margin_short_trader.py:351-353`, `margin_short_wide_trader.py:404-406`) | **확인됨** — 포지션 파일이 깨지면 "포지션 없음"으로 시작한다. 저장은 임시파일→교체(`_save`)라 깨질 확률은 낮다. 위험 낮음~중간 |
+| 21 | `binance_guard._symbol_filters_futures`(`:289-301`)가 거래소정보 조회 실패 시 `(step 0.0, 최소주문 5.0)`을 정상값처럼 반환 | **확인됨** — #10(마진쪽 같은 계열)과 동일 패턴. 선물쪽은 호출부가 `qty<=0`을 막아 주문이 안 나가는 쪽이라 위험 낮음 |
+| 22 | `margin_guard.get_margin_level` 실패 시 999.0(fail-open) | **의도된 설계**(`:252-266` 주석에 근거 명시, 실패는 `log.error`로 남김). 신규 위험 아님 |
+| - | `rsi_extreme_short_paper.py` 이름과 달리 실주문 함수 호출 | 이미 #15에서 처리(2026-08-20 비활성화, `watchdog.py`에서 제거). 중복 |
+
+코드는 수정하지 않았다.

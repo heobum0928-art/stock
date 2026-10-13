@@ -95,3 +95,16 @@
 | 23 | `core_leveraged.py:69` `LEVERAGE = 2.0`이 하드코딩이고 설정(`binance_live_config.json`)을 읽지 않는다 | **확인됨(코드)**. 사이징(`:126,155,186,235`)이 전부 이 상수를 쓴다. 현재 설정 `leverage: 2`와 같아 **지금은 영향 없음**. 단 결정 대기 중인 "core_lev 1.5배"를 하려면 설정(`leverage_by_engine.core_lev`)만 바꿔서는 안 되고(거래소 레버리지는 정수, `binance_guard.engine_leverage`가 int) 이 상수를 바꿔야 한다 — 설정만 바꾸면 명목 크기는 그대로 2배다. 사용자 결정 시 함께 알릴 것 |
 
 코드는 수정하지 않았다.
+
+---
+
+## 2026-10-13 추가 (클라우드 감사 10-12 실행분, 로컬 재확인)
+
+| # | 발견(루틴) | 로컬 재확인 |
+|---|---|---|
+| 24 | `newlisting_monitor.py`가 재시작 시 포지션을 디스크에서 복원하지 않음 | **확인됨(코드)**(`:67` `_positions = {}`, 저장만 있고 복원 함수 없음). **영향 없음** — `scripts/watchdog.py:252`에서 2026-07-13에 은퇴(프로세스 목록에도 없음), 빗썸 현물 `armed_engines=[]` |
+| 25 | `bithumb/live_guard.execute_buy()`가 실체결가를 돌려주지 않음(margin/binance 가드는 이미 반영) | **확인됨(코드)** — 반환이 `{"live": True, "result": res}`뿐. **영향 없음** — 빗썸 현물 `armed_engines=[]`. #18과 같은 계열 |
+| 26 | 3개 가드의 `load_config()`가 모든 예외를 로그 없이 삼키고 기본값 반환 | **확인됨**(`margin_guard.py:50`, `binance_guard.py:63`, `live_guard.py:52`). 단 기본값이 `enabled=False, armed_engines=[]`이고 docstring에 "FAIL-SAFE: 깨지면 OFF"로 명시된 **의도된 설계**(실거래가 꺼지는 안전한 쪽). 로그가 없어 "정상 OFF"와 "깨짐"이 구분 안 되는 점만 #20과 같은 계열의 관측성 문제 |
+| - | `rsi_extreme_short_paper.py` 청산가를 체결가 대신 조회가로 씀(재무장 시 위험) | 이미 #15(2026-08-20 비활성화, watchdog 제거). 중복 |
+
+코드는 수정하지 않았다.

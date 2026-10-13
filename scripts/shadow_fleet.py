@@ -33,6 +33,9 @@
   V7_fundexit  V1 + 진입 24h 시점에 누적 펀딩이 음수(숏이 내는 중)면 청산 — 1회 판정
              둘 다 하락장 백테스트에서 "효과가 2025-10-11 하루에 집중"으로 기각된 규칙을
              정의 그대로 전방 검증한다. 문턱·시점은 여기서 새로 정하지 않았다. 판정 9/19.
+  V8_halftrim  V1 + 명목가 -20% 도달 시 물량 절반 정리(레그1), 나머지 절반은 -40%까지
+             그대로 유지(레그2). 손절 문턱(-40%) 자체는 안 건드리고 청산 전 손실 폭을
+             줄이는 게 목적. docs/PREREG_HALFTRIM.md, 판정일은 그 문서에 고정. 2026-09-14 신설.
 
 손익은 전부 (가격손익 + 펀딩비 + 수수료)로 기록한다. 이게 이 봇의 존재 이유다.
 
@@ -125,6 +128,7 @@ VARIANTS = {
     # ★ 2026-09-04 PREREG_FLEET_V6V7 — V1에 규칙 하나씩만 얹음(다른 건 V1과 완전 동일)
     "V6_timestop": dict(stop=40.0, trail=None, hold_h=48, filt=None, timestop_h=24),
     "V7_fundexit": dict(stop=40.0, trail=None, hold_h=48, filt=None, fundexit_h=24),
+    "V8_halftrim": dict(stop=40.0, trail=None, hold_h=48, filt=None, half_trim_pct=20.0),
 }
 
 
@@ -269,7 +273,7 @@ TRADE_FIELDS = ["signal_id", "variant", "symbol", "entry_time", "exit_time",
                 "price_pnl_pct", "price_pnl_usdt", "funding_usdt", "funding_events",
                 "commission_usdt", "net_pnl_usdt", "net_pnl_pct_margin",
                 "mfe_pct", "mae_pct", "funding_rate_at_entry", "funding_interval_h",
-                "cusum_score"]   # ★ 2026-09-11 추가 (PREREG_CUSUM_JUDGE.md)
+                "cusum_score", "leg"]   # ★ 2026-09-14 leg 추가 (PREREG_HALFTRIM.md) — trim/final/full
 
 
 def _migrate_header(path, fields):
@@ -380,6 +384,42 @@ def main():
                     peak_pnl = (1 - p["mfe_price"] / entry) * 100
                     hold_h = (now - p["entry_ts"]) / 3600
 
+                    # ★ 2026-09-14 PREREG_HALFTRIM: 명목가 -half_trim_pct% 도달 시
+                    #   물량 절반을 먼저 정리(레그1)하고 나머지 절반은 그대로 -40%까지 보유.
+                    #   포지션을 지우지 않고 size_frac만 절반으로 줄여 계속 추적한다.
+                    # 갭으로 -stop%까지 한 번에 뚫은 경우는 절반청산 대신 바로 아래 정상
+                    # 손절 분기로 넘긴다(절반만 자르고 나머지를 스탑 너머로 방치하면 안 됨).
+                    if (cfg.get("half_trim_pct") and not p.get("trimmed")
+                            and -cfg["stop"] < cur_pnl <= -cfg["half_trim_pct"]):
+                        frac0 = p.get("size_frac", 1.0)
+                        trim_notional = NOTIONAL_USDT * frac0 * 0.5
+                        trim_margin = MARGIN_USDT * frac0 * 0.5
+                        tfund, tfev = funding_paid(sym, p["entry_ms"], now * 1000, trim_notional)
+                        tcomm = -trim_notional * TAKER_FEE * 2
+                        tprice_pnl_usdt = trim_notional * cur_pnl / 100
+                        tnet = tprice_pnl_usdt + tfund + tcomm
+                        _append(TRADES_PATH, TRADE_FIELDS, dict(
+                            cusum_score=p.get("cusum_score"),
+                            signal_id=p["signal_id"], variant=vname, symbol=sym,
+                            entry_time=p["entry_iso"], exit_time=datetime.now(KST).isoformat(),
+                            entry_price=entry, exit_price=px, hold_h=round(hold_h, 2),
+                            reason=f"절반청산(-{cfg['half_trim_pct']:.0f}%)",
+                            price_pnl_pct=round(cur_pnl, 2), price_pnl_usdt=round(tprice_pnl_usdt, 3),
+                            funding_usdt=round(tfund, 4), funding_events=tfev,
+                            commission_usdt=round(tcomm, 4), net_pnl_usdt=round(tnet, 3),
+                            net_pnl_pct_margin=round(tnet / trim_margin * 100, 2) if trim_margin else 0,
+                            mfe_pct=round(peak_pnl, 2),
+                            mae_pct=round((p["mae_price"] / entry - 1) * 100, 2),
+                            funding_rate_at_entry=p.get("funding_rate"),
+                            funding_interval_h=p.get("funding_interval_h"),
+                            leg="trim"))
+                        p["size_frac"] = frac0 * 0.5
+                        p["trimmed"] = True
+                        _save(POS_PATH, positions)
+                        log.info(f"[{vname}] 절반청산 {sym} 가격{cur_pnl:+.1f}% 순{tnet:+.2f}U "
+                                 f"— 잔량 {p['size_frac']*100:.0f}%로 계속 보유")
+                        continue
+
                     reason = None
                     liquidated = False
                     # 강제청산이 스탑보다 앞선다 — 갭으로 청산선을 넘어버린 경우.
@@ -417,13 +457,18 @@ def main():
                     if not reason:
                         continue
 
-                    fund, fev = funding_paid(sym, p["entry_ms"], now * 1000, NOTIONAL_USDT)
-                    comm = -NOTIONAL_USDT * TAKER_FEE * 2
-                    price_pnl_usdt = NOTIONAL_USDT * cur_pnl / 100
+                    # ★ 2026-09-14: 절반청산(V8) 이후엔 남은 물량(size_frac)만큼만 계산.
+                    #   나머지 변형은 size_frac이 없어 기본 1.0 — 동작 변화 없음.
+                    frac = p.get("size_frac", 1.0)
+                    eff_notional = NOTIONAL_USDT * frac
+                    eff_margin = MARGIN_USDT * frac
+                    fund, fev = funding_paid(sym, p["entry_ms"], now * 1000, eff_notional)
+                    comm = -eff_notional * TAKER_FEE * 2
+                    price_pnl_usdt = eff_notional * cur_pnl / 100
                     net = price_pnl_usdt + fund + comm
                     # 고립증거금은 증거금 이상을 잃을 수 없다. 그 전에 거래소가 청산한다.
-                    if liquidated or net < -MARGIN_USDT:
-                        net = -MARGIN_USDT
+                    if liquidated or net < -eff_margin:
+                        net = -eff_margin
                         liquidated = True
                         if "강제청산" not in reason:
                             reason = f"강제청산({reason})"
@@ -438,11 +483,12 @@ def main():
                         price_pnl_pct=round(cur_pnl, 2), price_pnl_usdt=round(price_pnl_usdt, 3),
                         funding_usdt=round(fund, 4), funding_events=fev,
                         commission_usdt=round(comm, 4), net_pnl_usdt=round(net, 3),
-                        net_pnl_pct_margin=round(net / MARGIN_USDT * 100, 2),
+                        net_pnl_pct_margin=round(net / eff_margin * 100, 2) if eff_margin else 0,
                         mfe_pct=round(peak_pnl, 2),
                         mae_pct=round((p["mae_price"] / entry - 1) * 100, 2),
                         funding_rate_at_entry=p.get("funding_rate"),
-                        funding_interval_h=p.get("funding_interval_h")))
+                        funding_interval_h=p.get("funding_interval_h"),
+                        leg="final" if p.get("trimmed") else "full"))
                     log.info(f"[{vname}] 청산 {sym} {reason} 가격{cur_pnl:+.1f}% "
                              f"펀딩{fund:+.2f} 순{net:+.2f}U")
 

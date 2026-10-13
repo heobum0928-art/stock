@@ -903,8 +903,7 @@ def main():
                                        listing_age_days=pos.get("listing_age_days"), qvol_24h=pos.get("qvol_24h")))
                         log.warning(f"★{venue_tag}숏 외부청산 감지 {sym} @{xpx:g} "
                                     f"pnl={pnl_pct:+.2f}%({pnl_usdt:+.2f}USDT) — 거래소에 포지션 없음, 슬롯 반환")
-                        try: notify.send(f"🔎 {venue_tag}숏 외부청산 감지 {sym} — 봇이 아닌 경로로 청산됨. "
-                                         f"pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT) 기록 완료, 슬롯 반환")
+                        try: notify.send(f"[숏청산] 원본 {sym} {pnl_usdt:+.1f}USDT ({pnl_pct:+.1f}%) 외부")
                         except Exception: pass
                         # ★ 2026-09-01(버그감사 3위 수정): 청산가가 손절선 부근(-STOP_PCT+2%p 이내)이면
                         #   서버측 스탑 체결로 간주해 스트라이크를 올린다 — 무조건 리셋은 블랙리스트를
@@ -1170,7 +1169,7 @@ def main():
                                mfe_pct=mfe_pct, mae_pct=mae_pct,
                                listing_age_days=pos.get("listing_age_days"), qvol_24h=pos.get("qvol_24h")))
                 log.warning(f"★{venue_tag}숏 청산 {sym} @{px:g} {reason} pnl={pnl_pct:+.2f}%({pnl_usdt:+.2f}USDT) → {cres.get('live') and '실청산' or cres}")
-                try: notify.send(f"📈 {venue_tag}숏 청산 {sym} {reason} pnl={pnl_pct:+.1f}% ({pnl_usdt:+.1f}USDT)")
+                try: notify.send(f"[숏청산] 원본 {sym} {pnl_usdt:+.1f}USDT ({pnl_pct:+.1f}%) {reason}")
                 except Exception: pass
                 # ★ 2026-08-09: 코인별 연속 스탑 카운트 — 2연속이면 7일 블랙리스트(TUTUSDT 2연패 계기)
                 coin_key = pos["coin"]

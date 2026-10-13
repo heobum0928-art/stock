@@ -1,27 +1,28 @@
-# 2026-10-12 크립토 일일 브리핑
+# 2026-10-13 크립토 일일 브리핑
 
 ## 한줄 요약
-숏 전략·BTC 200일선 전제를 깨뜨릴 새로운 구조적 사건은 확인되지 않았다 — BTC는 $83K대에서 안정적이고(200일선 추정 $71~75K 대비 여전히 8~10% 위), 알트시즌 신호도 지난주와 같은 수준(75 미만)에서 정체 중이며, 10/14 CPI 발표가 이번 주 유일한 주목 변수다.
+숏 전략·BTC 200일선 전제를 깨뜨릴 새로운 구조적 사건은 확인되지 않았다 — 한국 증시(반도체주) 급락 여파로 BTC가 장중 $81,000대까지 밀렸다가 $83,000대로 회복했고, 내일(10/14) 미국 CPI 발표가 유일한 단기 변수다.
 
 ## 숏전략 영향
-- **리스크 신호 없음.** 알트코인을 구조적으로 밀어올릴 호재(지속 상승 촉매, 확정 알트시즌, 규제 호재)는 검색으로 확인되지 않음.
-- 알트시즌 지수는 10월 초 기준 61(연중 최고치 근접, 75 "완전한 알트시즌" 문턱 미달)에서 더 올랐다는 근거는 오늘 검색상 확인되지 않음 — 정체 국면으로 추정. 사용자 측 자체 데이터(`breadth_events.csv`, 10-06 기록)에서도 "동반 급등" 흔적은 없었다는 점 재확인, 외부 지수만으로 추격 판단하지 않는 기존 입장 유지.
-- 바이낸스 상장폐지: **새로운 공지는 확인되지 않음.** 기존 확정분(ACX·HFT·PIVX·PYR·VANRY·VIC) 출금 마감이 10/17 03:00 UTC로 임박(약 5일 남음) — `delist_guard.py`는 여전히 그림자 모드(10-04 #43 판정: 차단이 오히려 평균을 악화시킴, 변경 없음).
-- SEC가 3배 레버리지 비트코인·이더리움 ETF(Volatility Shares, Cboe BZX 승인, 10/2~5)를 허용했으나 아직 등록 미완료로 거래는 시작되지 않음 — 거래 시작 시 BTC·ETH 현물 변동성 증폭 경로가 하나 늘어나는 구조적 변화이나, 알트 급등/되돌림 가정과는 직접 연관 없음. 계속 추적할 항목으로만 기록.
-- 10/6~8 BTC 급락(장중 $82,700~84,000대, 레버리지 롱 약 $1.1~1.17B 청산)은 이미 회복되어(현재 $83K대) 신규 숏 전략 가정을 깨뜨리는 "지속 상승" 신호는 아님.
+- **리스크 신호 없음.** 알트코인을 구조적으로 밀어올릴 호재(확정 알트시즌, 지속 상승 촉매, 규제 호재)는 검색으로 확인되지 않음.
+- 알트시즌 지수: 검색상 가장 최근 확인 가능한 수치는 9/19 기준 48(KuCoin) — 저장소 10-06 기록의 "61"보다 낮은 값이고, 10월 갱신치는 검색으로 확인 불가. 완전 알트시즌 문턱 75에는 여전히 미달. 사용자 측 자체 데이터(`breadth_events.csv`)로도 "동반 급등" 흔적이 없었다는 기존 결론과 상충되지 않음.
+- 바이낸스 상장폐지: **이번 주 신규 스팟 공지는 확인되지 않음**(Binance Alpha 피처드 목록 제외 10건은 스팟 거래와 무관). 기존 확정분(ACX·HFT·PIVX·PYR·VANRY·VIC) 출금 마감이 10/17 03:00 UTC로 임박(약 4일 남음) — `delist_guard.py`는 여전히 그림자 모드(10-04 #43 판정 유지, 변경 없음).
+- 10/13 한국 증시(반도체 밸류에이션 우려로 전주 코스피 급락 재점화 추정) 급락과 함께 비트코인이 장중 $81,000 아래로 떨어졌다가 Asia 세션 중 회복, 미 장 기준 $83,000대 안정 — 이 패턴(한국발 리스크오프 → BTC 단기 급락 → 수시간 내 회복)은 7~8월에도 관찰된 바 있어 알트 숏 가정을 깨뜨리는 "지속 상승" 신호는 아님. 다만 리스크오프 국면에서는 알트가 더 크게 흔들릴 수 있어 참고.
+- 24시간 청산 약 $771M(롱 $685.6M 비중) — 급락분 되돌림 과정에서 발생한 것으로 보이며, 숏 전략의 핵심 가정(급등 후 되돌림)과 반대 방향(급락 후 반등)이라 직접 연관은 낮음.
 
 ## BTC 추세(200일선) 관련
-- **200일선 이탈 위험 신호 없음.** BTC는 10/12 기준 약 $83,000~84,000대에서 거래 중(Yahoo Finance $83,673 시가 → $83,280, CoinGecko $83,608). 10/9 브리핑 기준 200일선 추정 $71~75K 대비 여전히 약 8~10% 위이며 ±1% 밴드 이탈과는 거리가 있음.
-- **10/14 CPI 발표가 이번 주 유일한 단기 변수**로 거론됨("CPI 결과에 따라 BTC $80K 하락 위험 또는 $86K 반등" 식의 양방향 시나리오 보도) — 결과 확인 전까지는 판단 보류.
-- 미 BTC 현물 ETF는 10/9까지 주간 누적 **-$386.3M 순유출**(Farside) — 유출세이나 급격한 추세 전환 신호로 보긴 이름. 반면 마이크로스트래티지(Strategy)는 추가 매입으로 BTC 보유량 848,250개로 확대(현금 $4.88B 유지) — 매도 압력 상쇄 요인.
-- FOMC 금리 결정 10/27~28, 미 중간선거 11/3 — 일정 변화 없음, 계속 추적.
-- 규제: CLARITY Act(디지털자산 시장구조법)는 9/15 상원 cloture 투표(49-50)에서 부결되어 2026년 내 입법 가능성은 낮아진 상태(변화 없음, 10/10 브리핑 전망 유지). 이번 주 새로운 SEC/CFTC 발표는 3배 레버리지 ETF 승인 외에 확인되지 않음.
+- **200일선 이탈 위험 신호 없음.** BTC는 10/13 기준 $83,000~83,500대(CoinDesk $83,381, Mitrade $83,515)에서 거래 중 — 저장소 trend3 기록(BTC $81,813 vs 200일선 $72,049, 일봉 종가 기준)과 정합적이며 여전히 약 13~16% 위.
+- 장중 한때 $81,000 이하로 밀렸으나 ±1% 밴드(약 $71,300~$72,700)와는 거리가 멀어 이탈 위험 아님.
+- **내일(10/14, 수) 미국 CPI 발표가 이번 주 유일한 단기 변수.** Bitfinex 분석은 발표 전 BTC가 $81,300~$84,500 범위에서 움직일 것으로 예상. 과거 패턴(8월 CPI 3.4% 예상치 부합 → BTC 소폭 반등)을 참고하되, 결과는 예상 대비 서프라이즈 여부에 좌우되므로 결과 확인 전까지 판단 보류.
+- 미 BTC 현물 ETF 자금 흐름은 10/12 기준으로도 유출 기조 지속(10/12 하루 -$65.4M, 별도 집계 -$451.7M 보도도 있어 수치 혼재) — 추세 전환 신호로 보기는 이름. Strategy(옛 마이크로스트래티지)는 BTC 250개 추가 매입으로 매도 압력 상쇄 요인 유지.
+- FOMC 10/27~28 회의의 금리인하 확률은 예측시장 기준 약 20~22%로 낮게 형성(동결이 베이스케이스) — 10일 전보다 "인상 가능성 70%대" 같은 공격적 톤은 검색상 재확인되지 않음, 동결 우세로 완화된 분위기.
+- 러시아 Sberbank가 12월 암호화폐 거래 서비스 출시 승인을 받았다는 보도 — 국내 전략과 직접 연관은 낮으나 기관 채택 흐름 참고용.
 
 ## 참고 뉴스
-- [Bitcoin ETFs Both Bleed Through First Week of October](https://coinmarketcap.com/academy/article/bitcoin-ethereum-etfs-both-bleed-through-first-week-of-october) — 10월 첫째 주 BTC·ETH 현물 ETF 순유출 지속, 10/9까지 BTC -$386.3M.
-- [SEC approves first 3x bitcoin and ether ETFs in the U.S.](https://www.coindesk.com/daybook-us/2026/10/05/sec-approves-a-3x-fix-for-bitcoin-and-ether-traders-who-miss-the-wild-swings) — Cboe BZX 규정 변경 승인으로 3배 레버리지 BTC·ETH ETF 상장 가능해짐(아직 등록 미완료, 거래 전).
-- [Bitcoin long liquidations hit largest level since early June](https://cryptobriefing.com/bitcoin-long-liquidations-four-month-high/) — 10/6~8 BTC 급락, 약 14,505 BTC($1.17B) 롱 청산, 장중 저점 $82,700대.
-- [Crypto Reacts: Bitcoin Slides as Clarity Act Fails to Clear Senate Vote](https://decrypt.co/378286/crypto-clarity-act-fails-clear-senate-bitcoin-slides) — (배경) 9/15 CLARITY Act 상원 cloture 부결, BTC $76K대로 하락 — 10월 들어 회복됨, 입법 전망만 유지.
-- [Thailand SEC issues bitcoin and ether ETF rules set to take effect Oct. 16](https://www.theblock.co/news/regulation/2026-10-09-thailand-sec-issues-bitcoin-and-ether-etf-rules-set-to-take-effect-oct-16-418132) — 태국 SEC, 10/16부터 BTC·ETH ETF 규정 시행(국내 전략과 직접 연관은 낮으나 아시아 규제 흐름 참고용).
+- [Bitcoin Price Forecast: BTC rebounds despite cautious sentiment](https://www.mitrade.com/au/insights/news/live-news/article-3-2158573-20261013) — 10/13 한국발 리스크오프로 BTC가 $81K대까지 밀렸다가 $83K대 회복, CPI 발표(10/14) 전 $81,300~$84,500 박스권 예상(Bitfinex).
+- [Bitcoin Price Today: BTC Rebounds Above $83K](https://blockchainreporter.net/bitcoin-price-today-btc-rebounds-above-83k-kospi) — 코스피 약세 속 BTC 반등, 24시간 청산 약 $771M(롱 $685.6M).
+- [Binance Delisting Alert: 20 Crypto Pairs to Go Dark This Week](https://u.today/binance-delisting-alert-20-crypto-pairs-to-go-dark-this-week-whats-next) — Binance Alpha(피처드 목록) 제거 건, 스팟 거래 상장폐지 아님(기존 ACX·HFT·PIVX·PYR·VANRY·VIC 출금마감 10/17과 별개).
+- [Bitcoin Recovers After CPI Report Shows 3.4% US Inflation](https://www.kucoin.com/news/flash/bitcoin-recovers-after-cpi-report-shows-3-4-us-inflation) — (배경) 직전 8월 CPI 발표 시 BTC 반응 패턴, 10/14 발표 해석의 참고 기준선.
+- [South Korean Stock Selloff Sparks Crypto Trading Surge as Upbit Volume Soars](https://www.cryptometer.io/news/south-korean-stock-selloff-sparks-crypto-trading-surge-as-upbit-volume-soars/) — (배경, 7월 사례) 한국 증시 급락 시 업비트 거래량 급증 패턴 — 이번 주 재현 여부는 확인 안 됨, 구조적 자금이동 단정 근거 아님.
 
-(바이낸스 10월 신규 상장폐지/거래유의 공지는 검색상 확인되지 않음 — 기존 확정분 출금마감 10/17 약 5일 전, 계속 추적 대상. 알트시즌 지수의 오늘 자 갱신값은 검색으로 확인 못함 — 10월 초 61 수준에서 정체 추정.)
+(알트시즌 지수·바이낸스 신규 상장폐지 공지의 10월 13일자 실시간 수치는 검색으로 확인 불가 — 가장 최근 확인 가능한 값만 위에 반영. CME FedWatch 등 실시간 소스로 교차검증 권장.)

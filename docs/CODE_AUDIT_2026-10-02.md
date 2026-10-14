@@ -108,3 +108,15 @@
 | - | `rsi_extreme_short_paper.py` 청산가를 체결가 대신 조회가로 씀(재무장 시 위험) | 이미 #15(2026-08-20 비활성화, watchdog 제거). 중복 |
 
 코드는 수정하지 않았다.
+
+---
+
+## 2026-10-14 추가 (클라우드 감사 10-13 실행분, 로컬 재확인)
+
+| # | 발견(루틴) | 로컬 재확인 |
+|---|---|---|
+| 27 | `margin_manual_trader.py:77-85`, `margin_manual_long_trader.py:95-103`(+`rsi_extreme_short_paper.py`)의 `_log_trade()`에 try/except가 없다. 청산 주문이 나간 뒤 CSV 기록이 실패하면(파일을 엑셀로 열어 둔 경우 등) 예외가 올라가 `del positions[coin]`·저장을 건너뛴다 | **확인됨(코드)**. 호출부 `tg_bot.py:485-495`가 예외를 잡아 봇이 죽지는 않지만, 같은 거래소 청산을 포지션이 남은 채로 다음 사이클에 다시 시도(`close_short`)하게 된다. **지금은 영향 없음** — `data/margin_manual_pos.json`·`margin_manual_long_pos.json`이 모두 `{}`(열린 재량 포지션 없음), `rsi_extreme_short_paper`는 #15로 비활성. `margin_short_trader`가 2026-08-20에 고친 패턴이 두 재량 도구에 포팅되지 않은 것 맞음 |
+| 28 | `check_positions()`가 루프 끝에서 `_save_positions()`를 한 번만 호출(`margin_manual_trader.py:244-246`, `margin_manual_long_trader.py:346-347`) | **확인됨(코드)**. #27과 한 몸 — 루프 중 예외가 나면 앞서 처리한 청산 변경이 저장되지 않는다. 영향 조건과 현재 상태는 #27과 같다 |
+| 29 | `margin_manual_long_trader._shift_cap_to_mshort()`가 실거래 캡을 코드가 자동 재배분(`margin_live_config.json` 직접 기록) | **확인됨(코드)**, 이미 기록된 결정 대기 항목(수동 롱 봇 캡 자동 변경이 의도된 설계인지). 새 위험 아님. `close_on_profit` 포지션이 이익 청산될 때만 발동하고 현재 재량 롱 포지션은 없다 |
+
+수정하지 않았다(실거래 봇 코드는 이 루틴에서 건드리지 않음). #27·#28은 재량 포지션을 다시 열기 전에 고치면 된다.

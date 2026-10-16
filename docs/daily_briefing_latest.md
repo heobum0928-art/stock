@@ -1,26 +1,24 @@
-# 2026-10-15 크립토 일일 브리핑
+# 2026-10-16 크립토 일일 브리핑
 
 ## 한줄 요약
-10/14 발표된 9월 CPI가 예상(3.6%)을 상회한 3.7%(전월 3.4%)로 나와 증시가 하락하고 추가 금리인상 우려가 재부각됐으나, BTC는 200일선과 약 15%p 여유가 있어 즉각적 추세이탈 위험은 아니며, 숏전략의 핵심 가정(급등 되돌림)을 깨뜨릴 만한 알트 구조적 호재나 바이낸스 신규 상장폐지 공지는 확인되지 않았다.
+9월 PPI(10/15 발표)도 CPI(10/14)처럼 예상을 상회해 10월 FOMC 금리인상 가능성이 다시 커지며 BTC가 장중 $80,000 아래로 빠졌다가 $82,000대로 반등하는 등 변동성이 커졌으나, 200일선($72,133, 10-14 기록)까지는 여유가 있어 즉각적 이탈 위험은 아니고, 숏전략의 핵심 가정을 깨뜨릴 알트 구조적 호재도 확인되지 않았다 — 다만 10/20~28 바이낸스 EPIC·QUICK 상장폐지 일정은 `delist_guard`가 인지해야 할 신규 항목이다.
 
 ## 숏전략 영향
-- **리스크 신호 없음(단, 알트시즌 지수는 출처 간 상충 — 참고만).** CoinMarketCap 알트시즌 지수는 10/1 기준 61(완전 알트시즌 임계치 75 미달)로 저장소 10-06·10-13·10-14 기록과 일치하지만, 검색 중 발견한 다른 출처(날짜 불명)는 같은 지수를 34("확고한 비트코인 시즌")로 보도해 상충됨 — 실시간 10월 15일자 수치는 검색으로 확인 불가. 어느 쪽이든 완전 알트시즌(75) 신호는 아니다.
-- 바이낸스 쪽 신규 상장폐지·모니터링태그 공지는 10월자로 검색상 추가 확인되지 않음(가장 최근 확인 가능한 배치는 여전히 7/24 ACX·LSK·STX, 저장소 10-14 기록과 동일).
-- **참고(기존 기록 연속, 새 변화 아님)**: 업비트의 ICX(ICON) 상장폐지(거래지원 종료 10/19 15:00 KST)가 4일 뒤로 다가왔다. 바이낸스 선물 숏 대상은 아니나(업비트는 선물 거래소가 아님), `delist_guard`의 "상장폐지 공지 30일 이내 숏 차단" 규칙과 관련해 ICX가 바이낸스 선물 숏 후보로 신호가 뜰 경우를 계속 참고.
-- 미 크립토 시장구조 법안(CLARITY Act)은 8월 상원 휴회 이후 9월 재개를 기다리다, 검색된 10월 초 출처(독일어, 미확인) 기준 중간선거 전 처리가 불발되고 의회가 선거(11/3)까지 휴회했다는 보도가 있으나 **독립적으로 재확인되지 않았다** — 사실이라면 규제 불확실성 연장이지만 이는 알트에 구조적 상승 촉매가 아니라 오히려 불확실성 요인이며, 급등숏 전략의 되돌림 가정을 깨뜨리는 방향은 아니다.
-- 그 외 "급등 후 되돌림" 가정을 깨뜨릴 만한 거시 사건(알트 전반의 지속 상승 촉매, 알트시즌 확정 신호)은 확인되지 않음.
+- **리스크 신호 없음(알트 구조적 상승 촉매 미확인).** "급등한 코인은 되돌림 온다"는 가정을 깨뜨릴 만한 알트시즌 확정 신호나 개별 알트의 지속 상승 촉매는 검색상 확인되지 않음. 알트시즌 지수의 10월 16일자 실시간 수치는 검색으로 확인 불가(출처마다 상충, 기존 10-06~10-15 기록된 61 내외 추정만 유지).
+- **신규 항목: 바이낸스 EPIC(EpicChain)·QUICK(QuickSwap) 상장폐지 예정** — 선물: 10/20 08:30 UTC 이후 신규 포지션 차단, 같은 날 09:00 UTC 기존 포지션 강제 청산·정산. 현물: 10/28 03:00 UTC 거래 종료. 공지 시점(검색 결과 기준 추정 10월 초)이 오늘(10/16)로부터 30일 이내이므로, 2026-10-03 추가된 "상장폐지 공지 30일 이내 코인 숏 차단" 규칙(`delist_guard`) 대상에 EPIC·QUICK이 해당하는지 확인 필요(이 두 코인이 급등 숏 신호로 뜰 경우 차단되어야 함). `delist_guard`는 현재 그림자 모드(10-04 기록)이므로 실제 차단 여부는 별도 확인 대상.
+- 그 외 바이낸스 신규 상장폐지·거래유의(모니터링태그) 공지는 10월 중순 기준 추가 확인되지 않음(가장 최근 확인 가능한 배치는 여전히 7/24 ACX·LSK·STX 등, 8/17 ACX·HFT·PIVX·PYR·VANRY·VIC 분 — 이 중 8/17 분 토큰들의 **인출 마감이 10/17 03:00 UTC**로 내일이나, 이는 이미 지난 상장폐지의 인출 마감일이라 신규 숏 차단 판단과는 무관).
 
 ## BTC 추세(200일선) 관련
-- **200일선 이탈 위험 신호 없음, 단기 변동성 재료는 있음.** 9월 CPI(10/14 발표): 헤드라인 **+3.7% YoY**(전월 3.4%, 예상 3.6% 상회), 핵심 CPI +2.6% YoY(예상 2.5% 상회), 월간 +0.6%(에너지·휘발유 +9.1% 주도). "예상보다 뜨거운" 결과로 평가되며 증시(S&P500·나스닥·다우)가 발표 당일 하락, 추가 금리인상 가능성 보도가 늘었다.
-- BTC는 발표 전날(10/13) 약 $83,360(저가 $81,000대에서 반등). 저장소 10/14 기록 BTC $83,126 vs 200일선 $72,133(약 15%p 위) 대비 큰 변화는 검색상 확인되지 않았고, CPI 발표 이후 BTC의 구체적 반응(등락폭)은 검색으로 확인하지 못함 — **다음 점검에서 실제 반응 확인 필요**.
-- FOMC는 10/27~28 예정. 검색 결과가 상충돼(정책금리 수준·동결/인상 확률 모두 출처 간 불일치) 신뢰도 낮음 — 10-13 기록("인상 가능성 70%대")·10-14 기록("동결이 베이스케이스") 대비 추가로 확정할 근거는 없음. 다만 10/14 CPI 쇼크로 인상 우려가 다시 커졌다는 보도가 있어, FOMC 전까지 변동성 확대 가능성은 염두에 둘 필요.
-- BTC 현물 ETF: 10/5~10/9 주간 약 -$679M 순유출(3주 연속 유입 후 첫 유출, 저장소 10-14 기록과 동일). 10/12~10/15 주간 플로우는 검색으로 확인 불가. 200일선($72,133)까지 여유가 커 ETF 유출만으로 이탈 위험으로 보기는 어렵다.
+- **200일선 이탈 위험 신호 없음, 단 변동성 확대 중.** 9월 PPI(10/15 발표 추정, BLS 일정상 확인됨)가 예상을 상회했다는 보도(Crypto Briefing)가 있고, 이미 10/14 CPI(+3.7% YoY, 예상 3.6% 상회)도 뜨겁게 나온 데 이어 연속으로 인플레이션 서프라이즈가 겹치며 10월 FOMC 금리인상 가능성을 높이는 보도가 나옴(출처 간 확률 편차 큼 — 50%대~100%까지 다양해 신뢰도 낮음, 확인 필요).
+- 이 매크로 충격으로 BTC는 10/16 장중 한때 **$80,000 아래**로 밀렸다가 **$82,000~82,330대**로 반등(OKX·Benzinga, 10/16 기준). 10-14 저장소 기록(BTC $83,126 vs 200일선 $72,133, 약 15%p 위) 대비 눈높이는 낮아졌으나, $80,000 저점 기준으로도 200일선과 약 11%p 차이가 있어 **즉각적 이탈 위험은 아님**.
+- FOMC 일정은 여전히 출처 간 10/27~28로 보도되나 일부 자료는 10월 회의 자체가 없다고 주장 — 혼선 지속(10-13·10-14·10-15 기록과 동일한 불확실성).
+- BTC 현물 ETF: 10/5~10/9 주간 약 -$679M 순유출(기존 기록과 동일) 이후, 10/13 하루 +$175.6M 순유입 보도가 있으나 10/12~10/16 주간 전체 집계는 검색으로 확인 불가.
 
 ## 참고 뉴스
-- [CPI inflation report September 2026 (CNBC)](https://www.cnbc.com/2026/10/14/cpi-inflation-report-september-2026.html) — 9월 CPI 전년比 +3.7%(예상 3.6% 상회), 핵심 CPI +2.6%, 휘발유 +9.1%가 주도. 추가 금리인상 가능성 커짐.
-- [Stock market today: Hot inflation report drops tech (Yahoo Finance)](https://finance.yahoo.com/markets/live/stock-market-today-hot-inflation-report-drops-tech-drives-sp-500-nasdaq-down-152206632.html) — CPI 쇼크로 S&P500·나스닥·다우 하락.
-- [US CPI October 2026: Will Inflation Data Trigger a Bitcoin Crash or Rally? (Bitrue)](https://www.bitrue.com/blog/us-cpi-october) — 발표 전 BTC 지지선($81,300)·저항선(~$84,000~84,500) 분석, 예상 상회 시 ETF 유출 확대 및 $77,400 테스트 가능성 시나리오(발표 전 전망, 결과 미확인).
-- [Bitcoin ETFs Record $679M in Weekly Outflows Amid Uptober Slump (KuCoin)](https://www.kucoin.com/news/flash/bitcoin-etfs-record-679m-in-weekly-outflows-amid-uptober-slump) — 10/5~10/9 BTC 현물 ETF 주간 순유출 약 $679M.
-- [Altcoin Season 2026 Nears Key Threshold as Index Jumps to 61 (Analytics Insight)](https://www.analyticsinsight.net/news/altcoin-season-2026-nears-key-threshold-as-index-jumps-to-61) — CoinMarketCap 알트시즌 지수 10/1 기준 61, 완전 알트시즌 임계치(75) 미달(단, 타 출처는 34로 상충 보도 — 본문 참고).
+- [Bitcoin, Ethereum, XRP Gain, but Dogecoin Slips Amid Spike in Rate Hike Odds (Benzinga)](https://www.benzinga.com/crypto/cryptocurrency/26/10/62402641/bitcoin-ethereum-xrp-dogecoin-inflation-producer-prices-rate-hike) — 9월 생산자물가(PPI) 서프라이즈로 금리인상 가능성 재상승, 알트는 혼조.
+- [Traders fully price in Federal Reserve rate hike in October after PPI data (Crypto Briefing)](https://cryptobriefing.com/fed-rate-hike-october-ppi-data/) — PPI 발표 후 10월 FOMC 금리인상 확률이 시장 가격에 거의 100% 반영됐다는 보도(타 출처 대비 확률치가 높아 과장 가능성, 교차검증 필요).
+- [Bitcoin Rebounds to $83,000 as Ethereum, XRP, Dogecoin Trade Sideways (Benzinga)](https://www.benzinga.com/crypto/cryptocurrency/26/10/62336258/bitcoin-rebounds-to-83000-as-ethereum-xrp-dogecoin-trade-sideways) — CPI 충격 이후 BTC 반등, 알트는 횡보.
+- [Bitcoin, Ethereum, XRP and Dogecoin Slide After Hotter-Than-Expected CPI (Benzinga)](https://www.benzinga.com/crypto/cryptocurrency/26/10/62372055/bitcoin-ethereum-xrp-dogecoin-drop-crypto-inflation-cpi) — 10/14 CPI 쇼크 당일 크립토 전반 하락.
+- [Binance to Delist Perpetual Contracts of These Two Popular Cryptos in October (TradingView 재게시, U.Today)](https://vn.tradingview.com/news/u_today:539d34174094b:0-binance-to-delist-perpetual-contracts-of-these-two-popular-cryptos-in-october) — 바이낸스 EPIC·QUICK 선물 10/20, 현물 10/28 거래 종료 예정.
 
-(알트시즌 지수의 10월 15일자 실시간 수치, CPI 발표 이후 BTC 구체적 가격 반응, 10/12~10/15 주간 ETF 플로우는 검색으로 확인되지 않음 — 다음 점검에서 재확인 필요.)
+(알트시즌 지수의 10/16 실시간 수치, 10/12~10/16 주간 BTC ETF 플로우 전체 집계, PPI 정확한 수치·확률치 교차검증은 검색으로 확인되지 않음 — 다음 점검에서 재확인 필요.)

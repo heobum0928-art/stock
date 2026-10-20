@@ -111,14 +111,14 @@ def bar(df, d, hh, mm):
     return np.nan, 0.0
 
 
-def block_boot(vals, blocks, rng):
+def block_boot(vals, blocks, rng, lo_pct=1.25, hi_pct=98.75):
     keys = np.unique(blocks)
     groups = {k: vals[blocks == k] for k in keys}
     out = np.empty(B)
     for i in range(B):
         pick = rng.choice(keys, len(keys), replace=True)
         out[i] = np.concatenate([groups[k] for k in pick]).mean()
-    return np.percentile(out, 1.25), np.percentile(out, 98.75)     # 97.5% CI
+    return np.percentile(out, lo_pct), np.percentile(out, hi_pct)     # 기본 97.5% CI
 
 
 def main():
@@ -212,5 +212,75 @@ def main():
     print(f"  |g| 평균 {tr['g'].abs().mean()*100:.2f}%  |r| 평균 {tr['r'].abs().mean()*100:.2f}%")
 
 
+def main_forward():
+    """docs/PREREG_TRADFI_OVERNIGHT_FWD.md — 2026-10-20 이후 새 데이터만, 방향 반전(d=-1) 고정, 95% CI.
+    계산은 2026-11-30에 한 번만(사전등록 5절). 계약 목록은 docs/tradfi_overnight_universe.txt 고정."""
+    syms = [x.strip() for x in (ROOT / "docs" / "tradfi_overnight_universe.txt").read_text(encoding="utf-8").split() if x.strip()]
+    onb = {s: ob for s, ob in universe()}
+    FWD_START = dt.date(2026, 10, 20)
+    last_day = (dt.datetime.now(UTC) - dt.timedelta(hours=20)).astimezone(NY).date()
+    recs = []
+    for sym in syms:
+        df = load_klines(sym, onb.get(sym, 0))
+        if df.empty:
+            continue
+        days = trading_days(FWD_START - dt.timedelta(days=7), last_day)
+        for j in range(1, len(days)):
+            d, p = days[j], days[j - 1]
+            if d < FWD_START:
+                continue
+            c0, v0 = bar(df, d, 9, 30)
+            c1, v1 = bar(df, d, 10, 30)
+            cp, vp = bar(df, p, 16, 0)
+            if not (v0 > 0 and v1 > 0 and vp > 0) or np.isnan(c0 + c1 + cp):
+                continue
+            recs.append((sym.replace("USDT", ""), d.isoformat(), c0 / cp - 1, c1 / c0 - 1))
+    allr = pd.DataFrame(recs, columns=["sym", "date", "g", "r"])
+    tr = allr[allr["g"].abs() >= G_MIN].copy()
+    print("=" * 70)
+    print(f"[전방] 계약-일 {len(allr)}건 중 |g|≥1% 거래 {len(tr)}건 / 기간 {FWD_START} ~ {last_day} / 방향 반전 고정")
+    print("잣대: 명목가 기준 수익률, 순수익은 왕복 0.12% 차감")
+    print("=" * 70)
+    if len(tr) == 0:
+        print("표본 없음")
+        return
+    tr["wk"] = pd.to_datetime(tr["date"]).dt.strftime("%G-%V")
+    gross = (-np.sign(tr["g"]) * tr["r"]).values
+    net = gross - COST
+    blocks = tr["wk"].values
+    rng = np.random.default_rng(20261020)
+    glo, ghi = block_boot(gross, blocks, rng, 2.5, 97.5)
+    rng = np.random.default_rng(20261020)
+    nlo, nhi = block_boot(net, blocks, rng, 2.5, 97.5)
+    dates = pd.to_datetime(tr["date"])
+    mid = dates.median()
+    h1, h2 = (dates <= mid).values, (dates > mid).values
+    byc = pd.Series(net).groupby(tr["sym"].values).sum()
+    top = byc.idxmax()
+    keep = (tr["sym"] != top).values
+    f1 = len(tr) >= 300
+    f2 = glo > 0
+    f3 = net.mean() > 0 and nlo > 0
+    f4 = (gross - COST2).mean() > 0
+    f5 = all(net[h].mean() > 0 for h in (h1, h2) if h.sum())
+    f6 = net[keep].mean() > 0
+    print(f"  F1 거래 건수 {len(tr)}                         → {'충족' if f1 else '미충족'}")
+    print(f"  F2 총수익 평균 {gross.mean()*100:+.4f}%  95% CI [{glo*100:+.4f}, {ghi*100:+.4f}]  → {'충족' if f2 else '미충족'}")
+    print(f"  F3 순수익 평균 {net.mean()*100:+.4f}%  95% CI [{nlo*100:+.4f}, {nhi*100:+.4f}]  → {'충족' if f3 else '미충족'}")
+    print(f"  F4 비용 2배 순평균 {(gross-COST2).mean()*100:+.4f}%               → {'충족' if f4 else '미충족'}")
+    print(f"  F5 전반/후반 순평균 {net[h1].mean()*100:+.4f}% / {net[h2].mean()*100:+.4f}%  → {'충족' if f5 else '미충족'}")
+    print(f"  F6 최대기여 {top} 제외 순평균 {net[keep].mean()*100:+.4f}%     → {'충족' if f6 else '미충족'}")
+    ok = f1 and f2 and f3 and f4 and f5 and f6
+    if not f1:
+        verdict = "판별 불가(건수 부족) — 사전등록상 1회만 2026-12-31까지 연장"
+    else:
+        verdict = "**채택 후보** (실거래 변경 없음, 체결 가능성 별도 확인)" if ok else "기각"
+    print(f"\n  → 판정: {verdict}")
+    print(f"  [병기] 승률 {(gross>0).mean()*100:.1f}% 중앙 {np.median(gross)*100:+.4f}% 최악5평균 {np.sort(gross)[:5].mean()*100:+.2f}%")
+
+
 if __name__ == "__main__":
-    main()
+    if "--forward" in sys.argv:
+        main_forward()
+    else:
+        main()

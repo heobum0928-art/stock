@@ -54,6 +54,8 @@ HANG_CHECK_OVERRIDE_SEC = {
     # 일봉 신호 기반이라 폴링 자체가 느린 봇들 — 각자 CHECK_SEC의 약 3배로 여유를 둠
     "core_trader": 5400,        # CHECK_SEC=1800 × 3
     "core_leveraged": 5400,     # CHECK_SEC=1800 × 3 (실전봇이라 너무 길게는 안 둠)
+    "trend3_live": 5400,        # CHECK_SEC=1800 × 3 (core_leveraged와 같은 일봉 신호 계열)
+    "loss_stop_watch": 21600,   # 60초 폴링 I/O바운드 — CPU 무변화가 정상
     "hybrid_trader": 43200,     # CHECK_SEC=21600 × 2
     # ★ 2026-08-17(watchdog 신뢰성 감사, 사용자 확인 후 적용): margin_short_trader·accum_trader
     # 도 다른 실전봇들과 동일하게 30분 문턱을 못 넘겨 오탐 재시작 중이었음(logs/watchdog.log
@@ -200,6 +202,11 @@ BOTS = {
     # "ml_trader":              ROOT / "scripts" / "ml_trader.py",
     "core_trader":           ROOT / "scripts" / "core_trader.py",      # 코어 BTC 사이클타이밍 (검증엔진·모의 추적, core_leveraged 벤치마크로 존치 — 판단보류, 2026-08-20)
     "core_leveraged":        ROOT / "scripts" / "core_leveraged.py",   # 코어+2배 레버리지 — ★실거래(armed), 2026-08-20 확인
+    # ★ 2026-10-18: trend3 실거래 엔진(ETH·SOL 200일선 롱 1배). armed_engines·캡·레버리지 설정이 없으면
+    #   모의(신호만 기록)로 돈다 — 켜는 설정은 사용자가 직접(CLAUDE.md 6항). 등록은 watchdog 재시작 때 반영.
+    "trend3_live":           ROOT / "scripts" / "trend3_live.py",
+    # ★ 2026-10-21 사용자 지시("100달러 더 손해면 거래중지"): 기준선 이후 순손익이 -100이면 새 숏 진입만 차단.
+    "loss_stop_watch":       ROOT / "scripts" / "loss_stop_watch.py",
     # "blowoff_short_paper" 은퇴 (2026-07-12): ①선물(fapi) 가격만 조회해 선물 미상장 코인(PYR 등)을
     # 추적 못 하는 버그 — PYR 모의숏이 실제 -28% 하락(숏 +17%)인데 "가격 무변동, -0.2%"로 오기록됨.
     # ②역할 종료: 검증된 실전봇(margin_short_trader, 현물API 사용·정상)이 대체.

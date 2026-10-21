@@ -202,7 +202,7 @@ MARGIN_PER_TRADE = 50.0  # 증거금(상한과 동일). 실제 사용은 min(잔
 #   손절 1건 손실 -24→-40 USDT. 같은 날 binance_live_config.json의
 #   daily_loss_limit_usdt도 100→200으로 함께 올렸다.
 #   → 엔진캡 350 기준 동시 11건 → 7건.
-FUT_MARGIN_PER_TRADE = 80.0
+FUT_MARGIN_PER_TRADE = 40.0   # ★ 2026-10-21 사용자 결정("-10으로만"): 5배·40 = 명목 200, 손절 5% = 약 -10 (이전 80 = 약 -20). 봇 재시작 후 적용.
 
 # ★ 2026-08-26: 마진 담보비율 경보 단계. 1.3 강제청산 / 1.5 신규진입 차단(margin_guard._gate).
 ML_ALERT_LEVELS = [2.0, 1.7, 1.5, 1.4]

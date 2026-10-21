@@ -57,7 +57,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import requests
 from bithumb import notify
-from bithumb.binance_guard import BinanceGuard, live_status as bn_live_status, get_futures_usdt, get_position
+from bithumb.binance_guard import BinanceGuard, live_status as bn_live_status, get_futures_usdt, get_position, _signed
 
 ENGINE = "core_lev"
 
@@ -66,7 +66,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [CORE-LEV] %(message
     handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("logs/core_leveraged.log", encoding="utf-8")])
 log = logging.getLogger(__name__)
 
-LEVERAGE = 2.0
+LEVERAGE = 1.0              # ★ 2026-10-21 사용자 결정: 2배→1배(과거 2배는 2020년 제외 본전·낙폭 -92%·펀딩 연 ~20%p). 설정 leverage_by_engine.core_lev=1과 함께.
 NOTIONAL_KRW = 1_000_000     # 모의 노셔널 자본 (core_trader.py와 동일선상 비교용)
 SCOUT_FRAC, FULL_FRAC = 0.30, 1.0
 SMA_FAST, SMA_SLOW = 50, 200
@@ -175,11 +175,26 @@ def rebalance(s, target_frac, price, reason):
     return True
 
 
+def _wallet_usdt():
+    """사이징 기준 잔고 = 선물 지갑잔고(totalWalletBalance, 미실현 제외). 실패 시 None.
+    ★ 2026-10-21: 이전엔 get_futures_usdt()(=availableBalance)를 썼는데, 숏 봇이 증거금을 쓰고 풀 때마다
+    가용잔고가 흔들려 목표 명목이 464↔1000으로 오가며 30분마다 비트코인을 사고팔았다(상한이 풀리며 드러남).
+    지갑잔고는 포지션 개설로 줄지 않으므로 목표가 안정적이다."""
+    try:
+        r = _signed("GET", "/fapi/v2/account")
+        if r.status_code == 200:
+            return float(r.json().get("totalWalletBalance"))
+        log.warning(f"지갑잔고 조회 실패 status={r.status_code}")
+    except Exception as e:
+        log.warning(f"지갑잔고 조회 실패: {e}")
+    return None
+
+
 def live_target_notional(target_frac):
     """목표 명목노출(USDT). 실패 시 None. live_rebalance()와 동일 공식을 공유해
     '유지' 분기의 실포지션 대조에서도 같은 기준을 쓰게 한다(2026-09-02 신설)."""
     from bithumb.binance_guard import load_config
-    usdt = get_futures_usdt()
+    usdt = _wallet_usdt()
     if usdt is None or usdt <= 0:
         return None
     cap = load_config().get("engine_caps_usdt", {}).get(ENGINE, 0)
@@ -223,7 +238,7 @@ def live_rebalance(guard, target_frac, price):
     이전엔 호출 성공여부와 무관하게 항상 state를 갱신해서, 캡차단·API실패 시 "청산했다고
     착각하고 실제로는 포지션이 거래소에 남아있는" 영구 괴리 위험이 있었음."""
     from bithumb.binance_guard import load_config
-    usdt = get_futures_usdt()
+    usdt = _wallet_usdt()
     if usdt is None:
         log.warning("[LIVE] 선물잔고 조회 실패(API) — 거래 보류, 다음 루프 재시도")
         return False

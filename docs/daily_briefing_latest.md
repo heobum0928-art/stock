@@ -1,27 +1,22 @@
-# 2026-10-20 크립토 일일 브리핑
+# 2026-10-21 크립토 일일 브리핑
 
 ## 한줄 요약
-새로운 구조적 위험·호재 신호는 확인되지 않았다 — BTC는 200일선 대비 여전히 큰 폭으로 위에 있고, EPIC·QUICK 마진 제거(오늘 10:00 UTC)는 기존에 추적 중인 일정이 실행된 것뿐이며, 이번 주 핵심 변수는 여전히 10/27~28 FOMC 하나로 좁혀진다.
+구조적으로 전략 가정을 깨뜨리는 새 사건은 없음 — BTC는 200일선 위에서 완충폭을 유지 중이고, 알트 동반급등(알트시즌) 신호도 재점화 조짐이 없다. 다만 10/28 FOMC와 ETF 자금흐름 둔화는 계속 지켜볼 변수.
 
 ## 숏전략 영향
-- **리스크 신호 없음.** "급등한 코인은 되돌림 온다"는 가정을 구조적으로 깨뜨릴 알트시즌 확정 신호나 개별 알트의 지속상승 촉매는 검색상 확인되지 않음.
-- 알트시즌 지수(CoinMarketCap): 검색으로 확인되는 가장 최근 수치는 여전히 10/1 기준 **61**(임계 75 미달) — 10월 중순 이후 갱신치는 이번에도 검색으로 확인 불가, 10/5~10/19 브리핑과 동일하게 정체 상태로 취급.
-- EPIC(EpicChain)·QUICK(QuickSwap) 바이낸스 상장폐지: **마진 제거가 오늘(2026-10-20 10:00 UTC) 발효**, 현물 전체 거래쌍 제거·Convert 종료는 10/28로 예정대로 진행 중 — 10/16 브리핑부터 반복 확인된 동일 일정이며 오늘 발효는 "새 소식"이 아니라 기존 캘린더의 실행. 완화봇 숏 신호가 이 두 종목에 걸릴 경우 `delist_guard`(그림자 모드, 10-04 전환) 대상 여부 확인은 여전히 사용자 몫.
-- 오늘 검색된 개별 알트 급등(Worldcoin +11%, Venice Token +11%, Solana +3% 등)은 일간 변동폭 수준이며, 분석기관(Santiment) 자체도 "시장 전반의 회복 신호는 아니다"라고 평가 — 급등 숏 전략의 핵심 가정을 깨뜨릴 만한 구조적 촉매로 볼 근거 없음.
-- 그 외 신규 바이낸스 상장폐지·모니터링태그·거래유의 공지는 이번 검색에서 추가로 확인되지 않음(기존 배치: 7/24 ACX·LSK·STX, 8/17 ACX·HFT·PIVX·PYR·VANRY·VIC, 9/4 AVA·GNS·SCR·TOWNS, 9/3 ICX·SCRT·STORJ — 변동 없음).
+- **리스크 신호: 없음 (약함).** "급등한 알트는 되돌림 온다"는 가정을 구조적으로 깨뜨릴 만한 뉴스(알트시즌 본격화, 특정 알트의 지속적 상승 촉매 등)는 오늘 검색에서 확인되지 않았다. 알트시즌 지수는 최근 수 주 정체 상태였고(저장소 기록상 10/05~10/12 61 부근 정체), 오늘 새로 알트 전반이 동반 폭등했다는 뉴스도 없었다.
+- **참고 — 거래소 상장폐지**: 바이낸스는 EPIC(Epic Chain)·QUICK(QuickSwap) 현물 거래를 2026-10-28 03:00 UTC에 종료 예정이라고 공지했다(마진 대출은 10/15부터 중단). 10/3 추가된 "상장폐지 공지 30일 이내 코인 숏 차단" 규칙 대상이 될 수 있으니, 두 종목이 신호에 걸리면 이미 차단되고 있는지 확인할 것. 이 외 신규 모니터링 태그/상장폐지 공지는 확인되지 않았다.
+- **참고 — 운영 상태**: `would_change_log.md`에 따르면 오늘(10/21) 사용자 결정으로 선물·마진 양쪽 **신규 숏 진입이 전부 중지**된 상태(`max_total_short_notional_usdt`, `engine_caps_usdt`를 1로 낮춤)다. 아래 리스크 판단은 숏이 재개될 경우를 대비한 참고용이며, 현재는 신규 진입 자체가 없다.
 
 ## BTC 추세(200일선) 관련
-- **200일선 이탈 위험 신호 없음.** 검색으로 확인되는 최근 BTC 가격대는 약 **$82,800~85,000**(10/10 $83,031, 10/19 브리핑 $82,440~82,800과 큰 변화 없음). 저장소 최근 기록(10-14)의 200일선 $72,133 대비 여전히 **14%p 이상 위**이며, core_leveraged 추세 자체를 위협할 수준의 급락은 확인되지 않음.
-- 비트코인 ETF 자금 흐름: 이번 주(10월 셋째~넷째 주) 구체 수치는 검색으로 확인 불가 — 가장 최근 확인 가능한 데이터는 8월 말 기준(연초 이후 순유출 약 29.1억 달러, 8/24~28 주간 순유입 9.24억 달러)으로 시점이 맞지 않아 이번 주 판단 근거로 쓰지 않음. 추가 확인 필요.
-- **FOMC 일정 재확인**: 10/27~28 양일 회의, 결정 발표 10/28(SEP 미포함) — 10/19 브리핑과 동일, 새 소식 없음. 이번 회의까지 변동성 확대 요인으로만 취급.
-- SEC "Regulation Crypto Assets" 규정안 의견수렴 기한이 오늘 마감된다는 보도가 있음 — 즉시 가격에 영향을 줄 사안은 아니나, 토큰 프로젝트의 미국 사용자 온보딩·세이프하버·에어드랍 규정에 관한 것으로 중기 규제 방향 참고 사항(구조적 가격 영향은 미확인).
-- 미국 중간선거(11/3) 관련 크립토 시장구조 법안은 여전히 "상반기 내 처리 시도, 중간선거가 최대 변수"라는 기존 전망에서 벗어난 새 소식 없음.
+- **이탈 위험 신호: 없음.** BTC는 10/21 기준 약 $82,700~$83,400대에서 거래 중이며(출처: fxstreet, cryptoticker), 저장소 기록상 200일선은 10/14 기준 약 $72,133 — 현재가가 200일선 대비 약 +15% 완충폭을 유지하고 있어 단기 이탈 위험은 낮다.
+- **ETF 자금흐름**: 10/19 비트코인 현물 ETF +$527M 순유입(블랙록 IBIT 주도, 한 달 만에 최대치) → 10/20 +$23M으로 급격히 둔화. 10월 전체로는 여전히 순유출(-$65M~-$88M 추정, 소스 간 약간 차이). 이더리움 ETF는 10월 -$10.8억 순유출로 더 약함. 추세를 뒤집을 정도는 아니나 FOMC 전 관망세로 해석됨.
+- **FOMC**: 10/27~28 FOMC, 결정 발표는 10/28 (현지시각 오후 2시 ET). 이번 회의는 SEP(점도표) 없는 회의. 예측시장 상 금리 인하 확률은 낮게(약 4~22%, 소스별 편차 큼) 반영 — 급격한 정책 서프라이즈로 BTC가 크게 흔들릴 가능성에 대한 뚜렷한 사전 경고는 없으나, 발표 당일(10/28) 변동성 확대는 예상 범위.
+- **중간선거(11/3) 관련**: 시장구조법(CLARITY Act)은 중간선거 전 통과가 "불확실"하다는 분석(TD Cowen 등)이 있으나, 이는 이미 수개월째 알려진 지연 리스크이고 오늘 새로 발생한 사건은 아니다. 즉각적인 200일선 이탈 촉발 요인으로 보지 않음.
 
 ## 참고 뉴스
-- [Binance to delist perpetual contracts of these two popular cryptos in October (U.Today/TradingView 재게시)](https://vn.tradingview.com/news/u_today:539d34174094b:0-binance-to-delist-perpetual-contracts-of-these-two-popular-cryptos-in-october) — EPIC·QUICK 마진 제거 오늘(10/20 10:00 UTC) 발효, 현물·Convert 10/28 제거 예정.
-- [Altcoin Season 2026 Nears Key Threshold as Index Jumps to 61 (Analytics Insight)](https://www.analyticsinsight.net/news/altcoin-season-2026-nears-key-threshold-as-index-jumps-to-61) — CoinMarketCap 알트시즌 지수 61(10/1 기준), 임계 75 미달, 10월 중순 이후 갱신치 미확인.
-- [Daily Reports — BGeometrics (2026-10-10)](https://bgeometrics.com/reports/daily/2026-10-10.html) — BTC $83,031(전일 대비 +0.5%), 가장 최근 확인 가능한 구체 날짜·가격 데이터.
-- [Market participants weigh in on SEC's proposed crypto regulations (TradingView/Cointelegraph)](https://www.tradingview.com/news/cointelegraph:3436284ab094b:0-market-participants-weigh-in-on-sec-s-proposed-crypto-regulations/) — SEC "Regulation Crypto Assets" 의견수렴 기한 관련 보도.
-- [Bitcoin Rebounds as FINMA Approves First Swiss BTC ETF (Phemex)](https://phemex.com/news/article/phemex-crypto-market-daily-bitcoin-rebounds-as-finma-approves-first-swiss-btc-etf-oct-20-100285) — 스위스 FINMA 첫 비트코인 ETF 승인(구조적 영향은 유럽 시장 한정, 미국 전략에 직접 영향 미미로 판단).
-
-(알트시즌 지수·바이낸스 ETF 일별 플로우의 10월 중순 이후 갱신치는 이번에도 검색으로 확인되지 않음 — 다음 점검에서 재확인 필요. FOMC 결과(10/28) 전까지 금리 경로 관련 불확실성은 미해소.)
+- [ETF inflows of $526.7 million meet a Bitcoin price of $82,708: the levels that decide before the Fed meeting](https://cryptoticker.io/en/bitcoin-price-etf-inflows-fed-meeting-21-october-2026/) — 10/19 ETF 순유입 $527M, BTC $82,708 부근, FOMC(10/28) 전 핵심 레벨 공방.
+- [Could renewed ETF inflows push Bitcoin back toward $85,000?](https://www.fxstreet.com/cryptocurrencies/news/bitcoin-price-forecast-btc-eyes-a-break-above-85-000-as-institutional-demand-returns-202610211218) — ETF 수급 재개 시 $85K 재돌파 가능성 분석(10/21).
+- [US Spot Bitcoin ETFs Post Second Straight Day of Net Inflows, Led by BlackRock's IBIT](https://finance.biggo.com/news/cadb2bc2-6a62-429f-9dee-061d03508ae4) — IBIT 주도 2일 연속 순유입이나 10/20에는 $23M로 급감.
+- [FOMC Meeting Schedule — October 2026](https://fedratecalc.com/fomc-meeting-schedule/october-2026/) — 10/27~28 FOMC 일정, SEP 없는 회의, 발표 10/28 오후 2시 ET.
+- Binance 공지: EPIC·QUICK 현물 거래 2026-10-28 03:00 UTC 종료(마진 대출 10/15부터 중단) — [관련 보도](https://fxnewsgroup.com/forex-news/cryptocurrency/binance-to-delist-epic-and-quick/).

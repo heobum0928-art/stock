@@ -120,3 +120,24 @@
 | 29 | `margin_manual_long_trader._shift_cap_to_mshort()`가 실거래 캡을 코드가 자동 재배분(`margin_live_config.json` 직접 기록) | **확인됨(코드)**, 이미 기록된 결정 대기 항목(수동 롱 봇 캡 자동 변경이 의도된 설계인지). 새 위험 아님. `close_on_profit` 포지션이 이익 청산될 때만 발동하고 현재 재량 롱 포지션은 없다 |
 
 수정하지 않았다(실거래 봇 코드는 이 루틴에서 건드리지 않음). #27·#28은 재량 포지션을 다시 열기 전에 고치면 된다.
+
+---
+
+## 2026-10-25 추가 (사용자 지시 "5개 패턴 감사" — margin_guard/binance_guard/live_guard + 호출 스크립트 전체, 로컬 재확인)
+
+이미 기록된 항목(#1~#29)은 중복 기재하지 않는다. 설정파일(`data/*_live_config.json`)은 이 세션에서 접근 불가(.gitignore) — 아래는 순수 코드 패턴만, 값 정합성은 사람이 로컬에서 확인할 것.
+
+| # | 발견 | 로컬 확인 |
+|---|---|---|
+| 30 | `binance_guard.rebalance_long()`(core_lev 전용, BTC 실롱)이 거래소 레버리지를 설정하는 유일한 호출 `self._set_leverage(cfg.get("leverage", 2))`(`:422`)가 **엔진별 레버리지(`engine_leverage(self.engine, cfg)`)를 쓰지 않고 전역 `cfg["leverage"]`를 쓴다.** `_gate()`(`:353`)와 `open_short_futures()`(`:544`)는 이미 `engine_leverage()`로 수정돼 있는데 `rebalance_long()`만 빠졌다. 2026-10-21에 사용자가 "비트코인 롱 2배→1배"를 `leverage_by_engine.core_lev=1`+`core_leveraged.py LEVERAGE=1.0`으로 실행했는데(`docs/would_change_log.md:9465` ②), 사이징(명목 계산)은 로컬 `LEVERAGE` 상수로 맞게 줄어들지만 **거래소에 실제로 거는 레버리지는 여전히 전역 `cfg["leverage"]` 값**이라 `leverage_by_engine.core_lev`를 아무리 1로 설정해도 적용되지 않을 수 있다. 추가로 `_set_leverage()`(`:382-386`) 자체가 응답 status/본문을 전혀 확인하지 않고 네트워크 예외만 `log.warning`하므로, 레버리지 변경이 거래소에서 거부돼도 완전히 조용히 넘어간다(패턴5). **값(`leverage_by_engine.core_lev`가 실제로 1인지, 전역 `leverage`가 몇인지)은 사람이 `data/binance_live_config.json`에서 직접 확인 — 다르면 core_lev 실제 레버리지가 의도와 다를 수 있음.** |
+| 31 | `binance_guard.rebalance_long()`의 `price <= 0`(`:393-394`) 분기에 로그가 전혀 없다(형제 함수 `open_short_futures()`의 동일 분기는 `:568`에서 `log.error`). `_mark_price()`(기존 #11, 실패 시 무로그 0.0 반환)와 결합하면 core_lev 루프에서 가격조회가 실패해도 로그에 아무 흔적이 안 남는다 — #11은 `_mark_price` 자체를 지적했지만 이 호출부가 로그를 보강하지 않은 것은 새로 확인. |
+| 32 | `bithumb/live_guard.py`의 `_load_state()`/`_save_state()`(`:56-72`)에 `margin_guard.py`·`binance_guard.py`에 있는 파일락(`_file_lock`/`_release_lock`)이 없다. margin_guard의 2026-07-13 주석(`:82-85`)이 바로 이 패턴(여러 프로세스의 동시 read-modify-write → 손실기록 유실 → 일일손실한도 게이트 무력화)을 지적해 고친 건인데 `live_guard.py`만 포팅이 안 됐다. `live_guard`를 실제로 쓰는 엔진은 `core_trader`·`manual_trader`·`cascade_trader`·`accum_trader`·`rsi_trader`·`newlisting_monitor`(전부 `LiveGuard` import 확인). #16·#18에 따르면 이들의 `armed_engines`가 당시 `[]`였다 — **지금도 그런지는 설정파일 확인 불가로 재확인 못 함.** 둘 이상이 동시에 arm되는 순간부터 margin_guard와 같은 경쟁상태 위험이 생긴다. |
+| 33 | `margin_manual_trader.py:88-92`·`margin_manual_long_trader.py:106-110`의 로컬 `_price(sym)`가 `margin_guard._price`(기존 #10)와 동일하게 실패 시 로그 없이 `0.0` 반환을 반복(독립 복제). 호출부가 직후 `if price/entry_price <= 0` 체크를 하므로(`:137-138`·`:188-189`·`:151-152`·`:270-271`) 즉시 재시도/중단되어 거래결정 오염 위험은 낮음 — 다만 왜 멈췄는지 로그로 추적이 안 됨(패턴5, 저위험). |
+
+### 오늘 재확인한 기존 항목(변동 없음)
+- #2(완화봇 진입 직후 포지션 미저장)는 **고쳐져 있음을 재확인** — `margin_short_wide_trader.py:1374,1444`, `margin_short_trader.py:1530` 모두 `_save(POS_PATH, positions)`가 진입 직후 호출됨(주석 "2026-10-03: 진입 직후 즉시 저장").
+- margin_guard.py/binance_guard.py의 `get_margin_usdt`/`get_borrowed`/`get_held`/`get_futures_usdt`/`get_position`/`get_futures_position`은 모두 실패 시 `None` 반환(패턴1 — 이미 수정됨, 신규 아님).
+- `open_short`/`open_long`/`open_short_futures`는 실제 체결가(`fill_price`/`avgPrice`+주문조회 폴백)를 반환(패턴3 — 이미 수정됨). `close_short`/`close_long`/`close_short_futures`/`rebalance_long`은 여전히 체결가를 반환하지 않음(기존 #4·#14, 신규 아님).
+- `margin_guard.open_short/close_short/open_long/close_long`의 주문 POST `except Exception` 분기(`:397-399,448-451,686-688,723-725`)는 원장(CSV)만 기록하고 `log.error`가 없음 — 기존 #8과 동일 계열(해당 네 함수 전체에서 재확인, #8은 `close_short`만 짚었음).
+
+코드는 수정하지 않았다(진단만, CLAUDE.md 6항).

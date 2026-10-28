@@ -141,3 +141,32 @@
 - `margin_guard.open_short/close_short/open_long/close_long`의 주문 POST `except Exception` 분기(`:397-399,448-451,686-688,723-725`)는 원장(CSV)만 기록하고 `log.error`가 없음 — 기존 #8과 동일 계열(해당 네 함수 전체에서 재확인, #8은 `close_short`만 짚었음).
 
 코드는 수정하지 않았다(진단만, CLAUDE.md 6항).
+
+---
+
+## 2026-10-28 추가 (클라우드 감사 10-28 실행분, 로컬 재확인)
+
+(`docs/COWORK_BRIEF.md`에 따르면 trend3는 현재 실거래 중 — 이더리움·솔라나 롱 1배, 명목 ~150씩. 아래 #34~#37은 모의가 아니라 **실거래 엔진의 코드**다.)
+
+`margin_guard.py`·`binance_guard.py`·`live_guard.py`는 2026-10-25 이후 커밋이 없다(`git log --since=2026-10-24` 0건) — #1~#33은 전부 그대로 유효, 재확인 생략. 10-25 이후 추가된 새 파일(`scripts/trend3_live.py` 2026-10-13 신설, 10-25 감사 이후 09e1e14e·394bbd7 커밋으로 "원가기준 추가매수" 로직 추가; `scripts/set_cap_at.py` 신설)이 `binance_guard`를 직접 호출하며 이번 감사에서 처음 다뤄 **새로 발견한 것**:
+
+| # | 발견 | 로컬 확인 |
+|---|---|---|
+| 34 | `trend3_live.py:150` `Trend3Guard.buy()`의 레버리지 설정 호출 `bg._signed("POST","/fapi/v1/leverage",{...})`이 **응답을 변수에 담지도, 상태코드를 확인하지도 않는다.** 기존 #30·#31(`binance_guard.rebalance_long()`이 쓰는 `_set_leverage()`가 응답 미확인)과 같은 계열이지만, 이번엔 `BinanceGuard._set_leverage()`를 거치지 않고 새 파일이 직접 호출하는 **별도 코드 경로**라 새로 확인. 파일 자체 주석(`:16-17`)과 `step_symbol`의 불일치 알림(`:284-289`)은 "설정값(`leverage_by_engine.trend3`)과 로컬 `LEVERAGE` 상수가 같은지"만 검증하고, **거래소에 레버리지 변경이 실제로 반영됐는지는 검증하지 않는다.** 거래소가 거부해도(예: 해당 심볼에 이미 다른 레버리지로 열린 포지션이 있는 경우) 조용히 넘어가고 그대로 주문이 나간다(패턴5). |
+| 35 | `trend3_live.py` `Trend3Guard.buy()`가 원장(`ledger_sym`, `:161`)에 기록하는 `notional_usdt`가 `executed * price`인데, 이 `price`(`:140`)는 **주문 전 조회가**(`bg._mark_price`)다. 체결 수량(`executed`, `:160`)은 실제 체결응답(`executedQty`)을 쓰지만, 가격은 응답(`res`, `newOrderRespType=RESULT`라 `avgPrice` 포함 가능)의 실제 평균체결가를 쓰지 않는다. 기존 #4·#14(청산가 미반영)와 같은 패턴이 이번엔 **매수(진입) 쪽에 새 파일에서 재발** — 포지션 추적 수량 자체는 정확하지만 CSV 원장의 명목가 칸은 슬리피지만큼 체계오차가 생긴다. |
+| 36 | `trend3_live.py:100-108` `load_state()`의 JSON 파싱 예외(`except Exception: pass`)가 로그 없이 삼켜지고 빈 상태(`{"on":{},"qty":{}}`)로 조용히 대체된다 — 기존 #20·#26과 같은 계열의 새 파일. **위험은 완화됨**: on/off 신호는 종가이력에서 순수함수로 전체 재생되어 복구되고(`:342-345`), 보유 수량도 `step_symbol`이 거래소 실포지션을 조회해 `pos["amt"]>0`이면 매수하지 않고 그 수량을 추적값으로 인수하는 분기가 있다(`:278-281`) — 중복매수로 이어지지 않는다. 다만 상태파일이 깨졌다는 사실 자체가 로그에 남지 않는 점은 그대로 저위험 관측성 문제. |
+| 37 | `trend3_live.py`의 `_alert_once()`(`:204-205`, 텔레그램 알림) 및 `step_symbol`의 성공 알림(`notify.send`, `:300`,`:316`)이 모두 `except Exception: pass` — 알림 실패가 조용히 사라진다. 거래 로직 자체엔 영향 없음(실주문·포지션 추적과 분리된 경로), 사용자가 실시간 알림을 못 받을 수 있다는 관측성 문제만(저위험). |
+| 38 | `set_cap_at.py:36-39` 지갑조회가 `status_code != 200`이면 별도 로그 없이 `wallet=None`만 남고, 이후 "지갑 {wallet}(기준 1100 미만 또는 조회실패)"라는 통합 메시지(`:45`)로만 남아 인증오류/네트워크오류/진짜저잔고를 구분 못한다 — 패턴1 계열이지만 완전 무로그는 아니고(조건 미충족 시 캡을 올리지 않고 조용히 종료하는 **안전한 방향**으로 동작), 그냥 원인 추적이 안 될 뿐(저위험). |
+
+### 패턴2 — 사람이 설정과 대조해야 할 하드코딩 리터럴(새 파일, 값 정합성은 미확인·확인 불가)
+- `trend3_live.py:56` `LEVERAGE = 1`
+- `trend3_live.py:251` `tol = max(target*0.15, 10.0, min_notional*1.5)` — 0.15 / 10.0 / 1.5 세 상수가 "원가기준 추가매수"를 발동시키는 허용오차를 정함(실제 돈이 들어가는 사이징 판단), 설정파일에 대응값 없이 코드에만 존재.
+- `set_cap_at.py:18` `MIN_WALLET = 1100.0` — 캡 상향을 허용하는 최소 지갑잔고 기준. 사용자가 CLI 인자로 넘기는 상한값(docstring 예시 `trend3 440`, 이전값 `300`은 주석에만 남아 있음)과 함께 실제 의도·`engine_caps_usdt.trend3`·`leverage_by_engine.trend3` 설정값은 사람이 로컬에서 직접 대조할 것.
+
+### 오늘 재확인한 기존 항목 / 확인 범위 한계
+- `set_cap_at.py`는 `while ... time.sleep(30)`으로 지정 시각까지 기다리는 구조라 "장시간 대기 중 프로세스·재부팅 시 예약 소실"이 패턴4 우려다. 커밋 `394bbd7`("상한 변경 예약을 윈도우 예약 작업(CoinbaseSetCapTrend3)으로 이전")이 Windows 작업 스케줄러를 도입했지만, `scripts/run_set_cap_trend3.cmd`를 보면 그 작업이 하는 일은 여전히 `set_cap_at.py "2026-10-29 03:30" trend3 440`을 실행하는 것뿐이고 **스크립트 내부의 대기 루프는 그대로 남아 있다.** 이 Windows 작업의 트리거가 "03:30에 맞춰 실행"인지 "부팅 시 실행"(그러면 대기 루프가 여전히 재부팅 생존에 의존)인지는 Windows 작업 스케줄러 설정(저장소 밖)이라 **이 세션에서 확인 불가** — 사람이 로컬에서 작업 트리거 종류를 확인할 것.
+
+### `docs/COWORK_BRIEF.md` 검토요청 #2에 대한 답(겸사 확인)
+"core_lev의 가용잔고 입력 불안정(2026-10-21 `_wallet_usdt()`로 수정) 패턴이 `trend3_live.leg_margin`에도 남아 있는지" — **남아있지 않음.** `trend3_live.py:216-224`의 `_wallet_usdt()`가 이미 `totalWalletBalance`(가용잔고가 아니라 전체 지갑잔고)를 쓰고, docstring(`:217`)에 "가용잔고는 숏 봇 증거금에 따라 흔들려 쓰지 않는다"고 명시돼 있어 core_lev의 해당 수정이 이미 반영된 상태로 작성됐다.
+
+코드는 수정하지 않았다(진단만, CLAUDE.md 6항). 설정파일(`data/*_live_config.json`)은 이 세션에서 접근 불가 — `trend3`의 `armed_engines` 포함 여부, `engine_caps_usdt.trend3`, `leverage_by_engine.trend3` 값은 사람이 로컬에서 확인할 것.

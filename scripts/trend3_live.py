@@ -130,9 +130,10 @@ class Trend3Guard(BinanceGuard):
         except Exception as e:
             log.warning(f"원장 기록 실패: {e}")
 
-    def buy(self, sym, target_notional):
-        """sym 롱을 target_notional(USDT)까지 시장가 매수. 반환 dict: live / dry / skip / error."""
-        ok, reason = self._gate(target_notional)
+    def buy(self, sym, target_notional, gate_notional=None):
+        """sym 롱을 target_notional(USDT)만큼 시장가 매수. 게이트는 gate_notional(기본: target_notional) 기준.
+        추가 매수(top-up)는 부족분만 사되 게이트는 총 목표로 본다. 반환 dict: live / dry / skip / error."""
+        ok, reason = self._gate(gate_notional if gate_notional is not None else target_notional)
         if not ok:
             self.ledger_sym("buy", sym, 0, target_notional, f"DRY:{reason}")
             return {"dry": True, "reason": reason}
@@ -211,12 +212,49 @@ def is_live():
             and cfg.get("engine_caps_usdt", {}).get(ENGINE) is not None)
 
 
+def _wallet_usdt():
+    """선물 지갑잔고(totalWalletBalance, 미실현 제외). 가용잔고는 숏 봇 증거금에 따라 흔들려 쓰지 않는다. 실패 시 None."""
+    try:
+        r = bg._signed("GET", "/fapi/v2/account")
+        if r.status_code == 200:
+            return float(r.json().get("totalWalletBalance"))
+        log.warning(f"지갑잔고 조회 실패 status={r.status_code}")
+    except Exception as e:
+        log.warning(f"지갑잔고 조회 실패: {e}")
+    return None
+
+
 def leg_margin(cfg):
-    usdt = get_futures_usdt()
+    usdt = _wallet_usdt()
     if usdt is None or usdt <= 0:
         return None
     cap = cfg.get("engine_caps_usdt", {}).get(ENGINE, 0)
     return min(usdt, cap) / N_LEGS
+
+
+def maybe_top_up(guard, s, sym, pos, px):
+    """★ 2026-10-28: 이미 ON이고 보유 중인 종목의 **매입 원가**가 목표(지갑·캡 기준)보다 부족하면 부족분만 추가 매수.
+    평가액이 아니라 원가(entryPrice×수량) 기준이라 가격이 떨어져도 물타기가 되지 않는다. 줄이는 일은 없다(매도는 200일선 이탈 때만)."""
+    tracked = float(s["qty"].get(sym, 0.0) or 0.0)
+    if tracked <= 0 or pos["amt"] <= 0 or pos["entry"] <= 0:
+        return
+    cfg = load_config()
+    if engine_leverage(ENGINE, cfg) != LEVERAGE:
+        return
+    margin = leg_margin(cfg)
+    if margin is None:
+        return
+    target = margin * LEVERAGE
+    invested = pos["entry"] * pos["amt"]
+    gap = target - invested
+    step, min_notional = bg._symbol_filters_futures(sym)
+    tol = max(target * 0.15, 10.0, min_notional * 1.5)
+    if gap <= tol:
+        return
+    res = guard.buy(sym, gap, gate_notional=target)
+    log.warning(f"[{sym}] 추가 매수: 원가 {invested:.1f} → 목표 {target:.1f}(부족 {gap:.1f}) → {res.get('live') and 'LIVE' or res}")
+    if res.get("live"):
+        s["qty"][sym] = tracked + float(res["qty"]); save_state(s)
 
 
 def step_symbol(guard, s, sym, on, px, ma, live):
@@ -280,6 +318,8 @@ def step_symbol(guard, s, sym, on, px, ma, live):
     else:
         log.info(f"[{sym}] 유지 {'ON' if on else 'OFF'} | 종가 {px:,.2f} / 200일선 {ma:,.2f} | "
                  f"추적 {tracked} / 실제 {pos['amt']}")
+        if on:
+            maybe_top_up(guard, s, sym, pos, px)
 
 
 def main():

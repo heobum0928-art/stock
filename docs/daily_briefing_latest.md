@@ -1,27 +1,28 @@
-# 2026-10-28 크립토 일일 브리핑
+# 2026-10-29 크립토 일일 브리핑
 
 ## 한줄 요약
-오늘 FOMC가 금리를 3.75~4.00%로 동결했으나(10-2 표결) 두 명이 인상을 주장하며 반대표를 던지고 12월 방향에 대한 명확한 신호를 주지 않아 매크로 불확실성이 소폭 커졌다 — 그 외 숏전략·BTC 200일선 가정을 깨뜨릴 새 구조적 사건은 확인되지 않았다.
+웹서치로는 오늘(10-29) 날짜가 명확한 구조적 신규 사건을 찾지 못했다 — 검색 결과의 날짜 신뢰도가 전반적으로 낮아 "사건 없음"과 "확인 불가"를 구분하기 어려우니 아래 수치는 모두 참고용으로만 쓸 것.
 
 ## 숏전략 영향
-- **리스크 신호 없음(평시 수준).** 알트시즌 지수는 가장 최근 확인치(2026년 8월, 약 30)가 75 임계값에 크게 못 미치고, 오늘자 갱신치는 웹서치로 확인하지 못함 — 다만 추세 반전(알트시즌 진입)을 시사하는 보도는 없었다. 급등 후 지속 상승(되돌림 실패)을 만들 만한 대형 호재·채택 발표도 검색으로 발견되지 않음.
-- **참고(종료됨):** 바이낸스 **EPIC(EpicChain)·QUICK(QuickSwap)** 현물·Convert가 예정대로 오늘 03:00 UTC(Convert 02:00 UTC)에 상폐됐다(최초 공지 10-14, 10-24~27 브리핑에서 계속 추적한 사안). 공지 이후 QUICK -20%대·EPIC -10~15%대 급락. 상폐 자체는 완료됐으므로 더 이상 "상장폐지 공지 30일 이내 숏 차단" 신규 적용 대상이 아니다(과거 사례로만 참고).
-- 빗썸 거래유의종목 관련 10월 신규 공지는 웹서치로 확인되지 않음(공식 공지 수집기 로그가 더 최신일 수 있음, 이 브리핑은 다루지 않음).
-- 결론: 현재 숏 신규진입은 사용자 결정으로 중지 상태(10-28 오전 재중지, `docs/would_change_log.md` 참조)이며, 뉴스 쪽에서도 이 결정을 재고할 새 근거는 없음.
+- **리스크 신호 없음(단, 확인 신뢰도 낮음).** 알트시즌 지수가 "56(9월 48에서 상승, 몇 달 내 최고치)"라는 KuCoin 보도를 찾았으나 게재일을 확정하지 못했다 — 내부 로그상 최근 확인치(8월 약 30, 10월 중 61 언급)와 겹치는 범위라 오늘자일 가능성은 있지만 단정할 수 없다. 어느 쪽이든 **75 임계값에는 못 미친다** — 알트시즌 전환(되돌림 가정 붕괴) 신호는 없음.
+- **EPIC·QUICK 상장폐지는 이미 종료된 사안**(10-28 브리핑에서 추적 완료, 오늘 신규 사항 아님) — 3차 매체(whale-alert.io, fxnewsgroup)가 스팟 10/28 03:00 UTC·마진 10/20·코파이트레이딩 10/21로 재확인했을 뿐, 추가 영향 없음.
+- 오늘 날짜로 확인되는 신규 바이낸스 "거래유의/모니터링 태그" 공지나, "급등 후 지속 상승(되돌림 실패)"을 만들 구조적 호재 발표는 검색상 발견되지 않음(단 검색 신뢰도 낮아 "없다"보다는 "확인 못함"에 가깝다).
+- 현재 숏 신규진입은 10-28 사용자 결정으로 중지 상태(`docs/would_change_log.md` 2026-10-28 항목)이며, 뉴스 쪽에서도 이 결정을 재고할 새 근거는 없음.
 
 ## BTC 추세(200일선) 관련
-- **200일선 이탈 위험 신호 없음, 단 매크로 불확실성 소폭 증가.** 내부 로그 기준 BTC는 10/19 약 83,126달러로 200일선(약 72,133) 대비 15% 위였고, 10/27 브리핑 기준으로도 약 79,800달러 선(약 10~11% 위)으로 추세 자체는 훼손되지 않았다. 오늘자 가격은 웹서치로 확정하지 못함.
-- **오늘의 핵심 사건: FOMC 결정.** 연준이 기준금리를 3.75~4.00%로 **동결**(10-2 표결)했다. 라이자 쿡, 베스 해맥 두 위원이 **인상**을 주장하며 반대표를 던졌고, 다수는 "인플레이션이 여전히 높다"며 12월 회의 방향에 대해 명확한 신호를 주지 않았다. 이란 관련 유가 상승이 인플레이션 압력을 넓은 품목으로 확산시키는 배경으로 지목됨. 신임 의장 케빈 워시는 "위기 상황이 아니면 선제안내를 하지 않는다"는 입장을 재확인. **동결 자체는 사전에 시장이 거의 확정적으로 예상**(인하 확률도 낮게 봤던 쪽)했던 결과라 깜짝 충격은 아니나, 매수(인상) 쪽 반대표 2명 + 12월 불확실성은 직전 브리핑(10-27)에 없던 요소다. 사용자 측도 같은 이유(FOMC 이후까지 trend3 증액 보류)로 이미 이 이벤트를 변수로 보고 있었다(10-28 (1) 로그).
-- 오늘 결정에 대한 크립토 시장의 실제 가격 반응(동결 후 BTC 변동)은 동시성 보도를 웹서치로 확인하지 못함 — 과거 "동결=예상대로"인 경우 반응이 미미했던 패턴과, 2명의 인상 요구 반대표가 추가 불확실성으로 작용했을 가능성 둘 다 열려 있다.
-- **ETF 자금 흐름**: 10/5~9주 -6.79억 달러, 10/12~16주 -2.284억 달러 순유출 후 10/19 월간 최대 단일일 순유입(+5.267억 달러), 10/20 +2,316만 달러로 일부 개선됐던 추세 — 10/21~28 최신 데이터는 웹서치로 확인 못함.
-- 미국 중간선거(2026-11-03) 관련 크립토 시장구조법안은 이미 절차투표(49-50) 부결로 선거 전 처리가 좌절된 상태(10월 중 보도, 변화 없음) — 장기 정책 불확실성이나 단기 가격에 즉각 영향 없음.
+- **200일선 이탈 위험 신호 없음(단, 오늘자 가격·수치는 웹서치로 확정 못함).** 검색에서 BTC 현재가로 $95,284·$80,839·$61,787(2월자 구기사 포함)가 서로 충돌해 나와 신뢰할 수 없다. 내부 로그 기준 최근 확인치(BTC 약 79,800~83,000달러, 200일선 약 72,133 대비 +10~15%)를 그대로 유지하되, 실제 현재가는 거래소 API로 별도 확인 필요.
+- **FOMC(10-28) 결정 자체는 이미 알고 있는 사실**(3.75~4.00% 동결, 10-2 표결, 쿡·해맥 인상 반대표) — 오늘 검색에서는 이 결정에 대한 **동시성 시장 반응(가격 임팩트)을 확인하지 못했다**(검색 결과가 회의 "전" 예측치만 반환, 예: Polymarket 10/25 기준 동결 확률 94.5%).
+- **ETF 자금 흐름**: 10/28~29 날짜가 특정된 데이터를 찾지 못함. 가장 최근 확인 가능한 것은 9/21 SoSoValue 기준 +9.99억 달러(2026년 최대 단일일) — 이미 한 달 이상 지난 수치라 현재 추세 판단에 쓰지 않음. farside.co.uk·CoinGlass 등 1차 소스 직접 확인이 필요하나 이번 조사에선 접근하지 못했다.
+- **미국 중간선거(2026-11-03) 관련**: 크립토 시장구조법안(CLARITY Act)이 셧다운·민주당 반대로 계속 지연 중이라는 보도(변화 없음, 10월 중 기존 보도와 일치) — 단기 가격 영향 근거 아님. 선거 전후 변동성 확대를 전망하는 보고서(HTX Research)가 있으나 프로모션성 콘텐츠로 구조적 근거로 쓰기엔 약함.
+- **참고(미확인, 재검증 필요):** Mt. Gox 상환 마감이 10/31로 연기되고 약 34,689 BTC(~40억 달러) 미지급이라는 보도를 찾았으나, 출처가 2025년 11월자 기사로 추정돼 **그대로 신뢰하지 않음**. 만약 실제로 10/31 전후 대규모 상환 이벤트가 있다면 BTC 단기 매도압력 요인이 될 수 있어, 다음 브리핑에서 날짜를 재확인할 것.
 
 ## 참고 뉴스
-- [Fed Holds Rates Steady, Cites Need for More Data on Inflation Outlook (Bloomberg, 2026-10-28)](https://www.bloomberg.com/news/articles/2026-10-28/fed-holds-rates-says-more-data-will-help-next-decision) — 연준 3.75~4.00% 동결, 12월 신호 부재.
-- [Fed keeps interest rates unchanged, but two officials dissented in favor of a rate hike (CNN, 2026-10-28)](https://www.cnn.com/2026/10/28/business/live-news/federal-reserve-interest-rate-october) — 10-2 표결, 쿡·해맥 인상 주장 반대표.
-- [Rate decision live: politics played 'no role' ahead of midterm elections (Yahoo Finance, 2026-10-28)](https://finance.yahoo.com/economy/policy/live/fed-meeting-live-updates-interest-rates-held-steady-in-split-vote-warsh-says-politics-played-no-role-ahead-of-midterm-elections-191946928.html) — 워시 의장 발언, 중간선거 관련 질의.
-- [Binance to delist EPIC and QUICK (CryptoBriefing, 공지 10-14 / 시행 10-28)](https://cryptobriefing.com/binance-delist-epic-quick-october-2026/) — EPIC·QUICK 현물·Convert 오늘 03:00 UTC 상폐 완료, 공지 후 QUICK -20%대·EPIC -10~15%대 급락(상폐 차단 규칙 적용 사례, 종료됨).
-- [Bitcoin ETFs Record $679M in Weekly Outflows Amid Uptober Slump / 관련 10월 ETF 흐름 시리즈 (KuCoin News Flash)](https://www.kucoin.com/news/flash/bitcoin-etfs-record-679m-in-weekly-outflows-amid-uptober-slump) — 10월 ETF 자금 흐름 등락, 10/21~28 최신치는 미확인.
+- [Binance to delist EPIC and QUICK (fxnewsgroup)](https://fxnewsgroup.com/forex-news/cryptocurrency/binance-to-delist-epic-and-quick/) — 스팟 10/28 03:00 UTC·마진 10/20·코파이트레이딩 10/21 상폐 일정 재확인(이미 종료된 사안, 신규 아님).
+- [Binance EPIC/QUICK delisting story (whale-alert.io)](https://whale-alert.io/stories/aea30121beded2/) — 위와 동일 사건의 3차 보도.
+- [Altcoin Season Index hits 56, still below altseason threshold (KuCoin)](https://www.kucoin.com/news/flash/altcoin-season-index-hits-56-still-below-altseason-threshold) — 게재일 불명, 75 임계값 미달은 유지.
+- [FOMC 일정 관련 (bittime)](https://www.bittime.com/en/blog/jadwal-fomc-oktober-2026) / [Fed 금리 날짜 (cryptoticker)](https://cryptoticker.io/fr/taux-fed-dates-annonce-bitcoin/) — 10-28 FOMC 동결 자체는 기존 확인 사실과 일치, 가격 반응은 미확인.
+- [HTX Research: 2026 US 중간선거 전 크립토 시장 전망 (The Block, 보도자료)](https://www.theblock.co/press-releases/htx-research-publishes-crypto-market-outlook-ahead-of-the-2026-u-s-midterm-elections-426833) — 선거 전후 변동성 확대 전망, 프로모션성 콘텐츠로 참고용.
+- [Bitcoin ETF flows turned positive for 2026 (investinglive, 9월 자료)](https://investinglive.com/es/Criptomonedas/los-flujos-de-bitcoin-etf-se-tornan-positivos-para-2026-tras-un-dia-de-entradas-de-casi-mil-millones-de-dolares/) — 9/21 기준 자료, 10월 하순 최신치 아님(참고만).
 
 ## 조사 한계
-웹서치 결과 다수가 날짜 불명확하거나 과거(2023~2025) 기사와 혼재돼, 오늘(10/28)의 실시간 BTC 가격·FOMC 발표 직후 시장 반응·알트시즌 지수 갱신치는 신뢰할 수 있는 수치를 확정하지 못했다. FOMC 결정·투표 결과·EPIC/QUICK 상폐 일정은 날짜가 명확한 소스(Bloomberg, CNN, Yahoo Finance, CryptoBriefing 등 복수 교차확인)를 기준으로 했다.
+오늘 웹서치 결과는 전반적으로 날짜 신뢰도가 낮았다 — 2020~2025년 기사, 날짜 미표기 페이지, 수개월 전 기사가 "오늘" 질의에도 섞여 나왔고, BTC 현재가 질의는 서로 2만~3만 달러씩 차이 나는 상충 수치를 반환했다. 이 때문에 이번 브리핑은 "오늘자 신규 구조적 사건 없음"이 아니라 **"검색으로는 확인하지 못함"**에 가깝다. 실시간 가격·ETF 플로우·FOMC 직후 시장 반응은 거래소 API(`bithumb/binance_guard.py` 등 기존 코드 경로, 단 본 브리핑에서는 조회만 하고 코드는 수정하지 않음)나 farside.co.uk·CoinGlass 같은 1차 소스로 별도 확인이 필요하다. Mt. Gox 상환 일정은 다음 브리핑에서 최신 출처로 재확인할 것.

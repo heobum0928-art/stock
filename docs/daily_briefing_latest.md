@@ -1,28 +1,26 @@
-# 2026-10-29 크립토 일일 브리핑
+# 2026-10-30 크립토 일일 브리핑
 
 ## 한줄 요약
-웹서치로는 오늘(10-29) 날짜가 명확한 구조적 신규 사건을 찾지 못했다 — 검색 결과의 날짜 신뢰도가 전반적으로 낮아 "사건 없음"과 "확인 불가"를 구분하기 어려우니 아래 수치는 모두 참고용으로만 쓸 것.
+오늘(10-30) 숏전략의 핵심 가정(급등 후 되돌림)이나 BTC 200일선 추세를 깨뜨릴 만한 새 구조적 사건은 검색상 확인되지 않음 — 다만 BONK·JUP 등 바이낸스 현물 상장폐지(10/23 확정)가 신규로 확인돼 완화봇의 "상장폐지 30일 이내 숏 차단" 규칙과 겹치는지 참고할 필요가 있고, 11/3 미국 중간선거(나흘 앞)가 가장 가까운 변동성 변수다.
 
 ## 숏전략 영향
-- **리스크 신호 없음(단, 확인 신뢰도 낮음).** 알트시즌 지수가 "56(9월 48에서 상승, 몇 달 내 최고치)"라는 KuCoin 보도를 찾았으나 게재일을 확정하지 못했다 — 내부 로그상 최근 확인치(8월 약 30, 10월 중 61 언급)와 겹치는 범위라 오늘자일 가능성은 있지만 단정할 수 없다. 어느 쪽이든 **75 임계값에는 못 미친다** — 알트시즌 전환(되돌림 가정 붕괴) 신호는 없음.
-- **EPIC·QUICK 상장폐지는 이미 종료된 사안**(10-28 브리핑에서 추적 완료, 오늘 신규 사항 아님) — 3차 매체(whale-alert.io, fxnewsgroup)가 스팟 10/28 03:00 UTC·마진 10/20·코파이트레이딩 10/21로 재확인했을 뿐, 추가 영향 없음.
-- 오늘 날짜로 확인되는 신규 바이낸스 "거래유의/모니터링 태그" 공지나, "급등 후 지속 상승(되돌림 실패)"을 만들 구조적 호재 발표는 검색상 발견되지 않음(단 검색 신뢰도 낮아 "없다"보다는 "확인 못함"에 가깝다).
-- 현재 숏 신규진입은 10-28 사용자 결정으로 중지 상태(`docs/would_change_log.md` 2026-10-28 항목)이며, 뉴스 쪽에서도 이 결정을 재고할 새 근거는 없음.
+- **리스크 신호 없음(신뢰도: 보통).** 알트시즌 지수는 가장 최근 확인 가능한 수치가 CoinMarketCap 기준 10/1 **61**(전주 52에서 상승)로, 여전히 "알트시즌 확정" 임계값 75에 못 미친다. 10/29 브리핑에서 언급된 "56(날짜 불명)"과 합쳐 봐도 추세는 50~60대 박스권이며, "급등한 코인이 되돌림 없이 계속 오른다"는 알트시즌형 붕괴 신호는 없다.
+- **신규 확인: 바이낸스가 BONK·JUP 등 현물 거래쌍 4종을 10/23부터 거래 중단**(블록미디어 10/21 보도). EPIC·QUICK 상장폐지(스팟 10/28 03:00 UTC)는 10-28·10-29 브리핑에서 이미 추적된 종료 사안. 이 코인들이 nr7_short·완화숏 신호 대상에 들어온다면 2026-10-03에 추가된 "상장폐지 공지 30일 이내 코인 숏 차단" 규칙이 이미 걸러주는지만 확인하면 되고, 별도 조치는 필요 없어 보인다(코드 확인은 하지 않았음 — 역할 범위 밖).
+- 이 외에 급등 지속을 뒷받침할 만한 구조적 호재(대형 파트너십, 규제 승인에 따른 특정 알트 폭등 등)나 신규 바이낸스 "거래유의" 지정 공지는 검색에서 발견되지 않음.
+- 참고: 현재 완화봇·원본봇 모두 신규 숏 진입은 10-28 사용자 결정으로 중지 상태(`docs/would_change_log.md` 2026-10-28)이며, 오늘 뉴스 중 이 결정을 재고할 근거는 없음.
 
 ## BTC 추세(200일선) 관련
-- **200일선 이탈 위험 신호 없음(단, 오늘자 가격·수치는 웹서치로 확정 못함).** 검색에서 BTC 현재가로 $95,284·$80,839·$61,787(2월자 구기사 포함)가 서로 충돌해 나와 신뢰할 수 없다. 내부 로그 기준 최근 확인치(BTC 약 79,800~83,000달러, 200일선 약 72,133 대비 +10~15%)를 그대로 유지하되, 실제 현재가는 거래소 API로 별도 확인 필요.
-- **FOMC(10-28) 결정 자체는 이미 알고 있는 사실**(3.75~4.00% 동결, 10-2 표결, 쿡·해맥 인상 반대표) — 오늘 검색에서는 이 결정에 대한 **동시성 시장 반응(가격 임팩트)을 확인하지 못했다**(검색 결과가 회의 "전" 예측치만 반환, 예: Polymarket 10/25 기준 동결 확률 94.5%).
-- **ETF 자금 흐름**: 10/28~29 날짜가 특정된 데이터를 찾지 못함. 가장 최근 확인 가능한 것은 9/21 SoSoValue 기준 +9.99억 달러(2026년 최대 단일일) — 이미 한 달 이상 지난 수치라 현재 추세 판단에 쓰지 않음. farside.co.uk·CoinGlass 등 1차 소스 직접 확인이 필요하나 이번 조사에선 접근하지 못했다.
-- **미국 중간선거(2026-11-03) 관련**: 크립토 시장구조법안(CLARITY Act)이 셧다운·민주당 반대로 계속 지연 중이라는 보도(변화 없음, 10월 중 기존 보도와 일치) — 단기 가격 영향 근거 아님. 선거 전후 변동성 확대를 전망하는 보고서(HTX Research)가 있으나 프로모션성 콘텐츠로 구조적 근거로 쓰기엔 약함.
-- **참고(미확인, 재검증 필요):** Mt. Gox 상환 마감이 10/31로 연기되고 약 34,689 BTC(~40억 달러) 미지급이라는 보도를 찾았으나, 출처가 2025년 11월자 기사로 추정돼 **그대로 신뢰하지 않음**. 만약 실제로 10/31 전후 대규모 상환 이벤트가 있다면 BTC 단기 매도압력 요인이 될 수 있어, 다음 브리핑에서 날짜를 재확인할 것.
+- **200일선 이탈 위험 신호 없음.** 웹서치로 확인한 가장 최근 가격은 BTC 10/27 종가 약 **$80,805**(10/22 고점 약 $84,300, 10/27 저점 약 $79,400) — 내부 로그상 200일선(10/14 기준 약 72,133)과 비교하면 여전히 **+10~12% 위**로 여유가 있다. 오늘자(10/29~30) 실시간 가격은 검색으로 확정하지 못함.
+- **FOMC(10/28) 결과: 동결 재확인.** 기준금리 3.75~4.00% 유지, 10-2 표결(쿡·해맥 반대, 인하 소수의견). 서프라이즈 없이 지나갔고, 가격에 큰 충격을 줬다는 보도는 찾지 못함 — 200일선 이탈을 유발할 사건은 아니었던 것으로 보임. 다음 FOMC는 12/8~9.
+- **ETF 자금 흐름: 혼조, 방향성 신호 약함.** 10/5~9주 순유출 약 -6.79억 달러 → 10/13 순유입 +1.76억 달러 → 10/12~16주 다시 순유출(보도 간 -1.45억~-2.29억 달러로 불일치) 순으로 널뛰기. 10/26~30 최신 데이터는 검색에서 확보하지 못함(SoSoValue·Farside 등 1차 소스 직접 확인 필요). 큰 방향성 이탈 압력으로 보기는 어려움.
+- **미국 중간선거(11/3, 나흘 앞) — 가장 가까운 변동성 변수.** CLARITY Act(크립토 시장구조법) 통과가 선거 결과에 걸려 있다는 보도가 이어지는 중이며, 과거 중간선거(2014·2018·2022) 패턴상 선거 전 매도·선거 후 안도 랠리 가능성이 언급됨(HTX Research 등 업계 보고서, 프로모션성 소지 있어 참고용). 구조적 확정 사건은 아니지만 11/3 전후 BTC·알트 변동성 확대 가능성은 염두에 둘 만하다.
 
 ## 참고 뉴스
-- [Binance to delist EPIC and QUICK (fxnewsgroup)](https://fxnewsgroup.com/forex-news/cryptocurrency/binance-to-delist-epic-and-quick/) — 스팟 10/28 03:00 UTC·마진 10/20·코파이트레이딩 10/21 상폐 일정 재확인(이미 종료된 사안, 신규 아님).
-- [Binance EPIC/QUICK delisting story (whale-alert.io)](https://whale-alert.io/stories/aea30121beded2/) — 위와 동일 사건의 3차 보도.
-- [Altcoin Season Index hits 56, still below altseason threshold (KuCoin)](https://www.kucoin.com/news/flash/altcoin-season-index-hits-56-still-below-altseason-threshold) — 게재일 불명, 75 임계값 미달은 유지.
-- [FOMC 일정 관련 (bittime)](https://www.bittime.com/en/blog/jadwal-fomc-oktober-2026) / [Fed 금리 날짜 (cryptoticker)](https://cryptoticker.io/fr/taux-fed-dates-annonce-bitcoin/) — 10-28 FOMC 동결 자체는 기존 확인 사실과 일치, 가격 반응은 미확인.
-- [HTX Research: 2026 US 중간선거 전 크립토 시장 전망 (The Block, 보도자료)](https://www.theblock.co/press-releases/htx-research-publishes-crypto-market-outlook-ahead-of-the-2026-u-s-midterm-elections-426833) — 선거 전후 변동성 확대 전망, 프로모션성 콘텐츠로 참고용.
-- [Bitcoin ETF flows turned positive for 2026 (investinglive, 9월 자료)](https://investinglive.com/es/Criptomonedas/los-flujos-de-bitcoin-etf-se-tornan-positivos-para-2026-tras-un-dia-de-entradas-de-casi-mil-millones-de-dolares/) — 9/21 기준 자료, 10월 하순 최신치 아님(참고만).
+- [Binance, BONK·JUP 등 현물 거래쌍 4종 상장폐지…23일부터 거래 중단 (블록미디어)](https://www.blockmedia.co.kr/archives/1154293) — 10/21 공지, 10/23부터 거래 중단. nr7_short·완화숏 대상 종목 필터링 여부 참고.
+- [FOMC October 2026: Fed Holds Rates in a 10-2 Vote (Admiral Markets)](https://admiralmarkets.com/analytics/traders-blog/fomc-october-2026-fed-holds-rates) — 10/28 동결 결정 확정 보도.
+- [Altcoin Season 2026 Nears Key Threshold as Index Jumps to 61 (Analytics Insight)](https://www.analyticsinsight.net/news/altcoin-season-2026-nears-key-threshold-as-index-jumps-to-61) — 10/1 기준 지수 61, 75 임계값 미달 유지.
+- [Bitcoin ETFs Record $679M in Weekly Outflows Amid Uptober Slump (KuCoin)](https://www.kucoin.com/news/flash/bitcoin-etfs-record-679m-in-weekly-outflows-amid-uptober-slump) — 10/5~9주 순유출, ETF 흐름 혼조의 한 예.
+- [HTX Research Publishes Crypto Market Outlook Ahead of the 2026 U.S. Midterm Elections (The Block, 보도자료)](https://www.theblock.co/press-releases/htx-research-publishes-crypto-market-outlook-ahead-of-the-2026-u-s-midterm-elections-426833) — 11/3 선거 전후 변동성 전망(프로모션성, 참고용).
 
 ## 조사 한계
-오늘 웹서치 결과는 전반적으로 날짜 신뢰도가 낮았다 — 2020~2025년 기사, 날짜 미표기 페이지, 수개월 전 기사가 "오늘" 질의에도 섞여 나왔고, BTC 현재가 질의는 서로 2만~3만 달러씩 차이 나는 상충 수치를 반환했다. 이 때문에 이번 브리핑은 "오늘자 신규 구조적 사건 없음"이 아니라 **"검색으로는 확인하지 못함"**에 가깝다. 실시간 가격·ETF 플로우·FOMC 직후 시장 반응은 거래소 API(`bithumb/binance_guard.py` 등 기존 코드 경로, 단 본 브리핑에서는 조회만 하고 코드는 수정하지 않음)나 farside.co.uk·CoinGlass 같은 1차 소스로 별도 확인이 필요하다. Mt. Gox 상환 일정은 다음 브리핑에서 최신 출처로 재확인할 것.
+웹서치 결과의 날짜 신뢰도는 오늘도 들쭉날쭉했다(동일 질의에 2024~2025년 기사, 날짜 미표기 글이 혼입). BTC 10/29~30 실시간가·ETF 10/26~30 최신 플로우는 1차 소스(거래소 API, farside.co.uk, CoinGlass)로 별도 확인이 필요하며, 이 브리핑에서는 조사만 하고 그런 조회는 수행하지 않았다(역할 범위: 조사·보고만, 주문·설정 변경 없음). BONK·JUP 상장폐지가 실제로 완화봇 숏 차단 규칙에 걸리는지는 코드 확인이 필요하나 본 브리핑에서는 다루지 않았다(코드 수정 금지 범위).

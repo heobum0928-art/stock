@@ -1,26 +1,25 @@
-# 2026-11-01 크립토 일일 브리핑
+# 2026-11-02 크립토 일일 브리핑
 
 ## 한줄 요약
-오늘도 숏전략의 핵심 가정(급등 후 되돌림)이나 BTC 200일선 추세를 구조적으로 깨뜨릴 새 사건은 검색상 확인되지 않음 — 10/28 FOMC 매파적 동결의 여진과 11/3(이틀 앞) 미국 중간선거가 여전히 가장 가까운 변동성 변수라는 점은 전일 판단과 동일.
+**가장 큰 새 변수는 바이낸스 자체다** — 10/29 바이낸스에서 사상 최대 규모(약 $6.3B, FBI는 북한 TraderTraitor 소행으로 지목)의 해킹이 발생해 입출금이 일시 중단됐고(11/1 단계적 재개), 이는 숏전략의 되돌림 가정이나 BTC 추세 자체를 깨는 사건은 아니지만 **두 실거래 전략이 모두 의존하는 거래소의 운영·거래상대방 리스크가 평소보다 뚜렷이 높아진 상태**라는 점에서 보고 범위를 넘어서지만 반드시 알아야 할 사안이다.
 
 ## 숏전략 영향
-- **리스크 신호 없음(신뢰도: 낮음~보통).** 검색 결과가 2026-11-01자로 날짜가 명확히 찍힌 1차 보도를 거의 내어주지 못해(아래 "조사 한계" 참고), 10/27~31에 확인된 배경이 오늘도 유지된다고 가정하고 판단함. 알트시즌 지수는 소스별로 33~61까지 괴리가 크고(BlockchainCenter·CoinMarketCap·Binance Square 등 산출 방식이 다름), 어느 소스도 "확정 알트시즌" 임계값 75를 넘지 않음. 비트코인 도미넌스도 57~60%대로 높아, "급등한 알트가 되돌림 없이 계속 오른다"는 구조적 알트시즌 신호는 없음.
-- 11/1 날짜로 확정된 신규 바이낸스 "토큰 전체 상장폐지" 공지는 검색에서 발견되지 않음. 다만 10/21~29 사이 진행 중인 기존 일정(EPIC·QUICK 디파짓 10/29 중단, 인출은 12/28까지 지원 등)은 계속 진행형이며 신규 사건은 아님.
-- 빗썸 "거래유의종목 지정" 관련 11/1자 신규 공지도 검색에서 확인되지 않음(빗썸 공지 수집기 로그는 본 브리핑 역할 범위 밖).
-- 참고(배경, 영향 판단 아님): `docs/would_change_log.md` 최신 기록(2026-10-28)에 따르면 완화봇·원본봇 모두 신규 숏 진입이 사용자 결정으로 중지된 상태로 남아 있다. 이는 이 작업 프롬프트에 적힌 "완화봇 신규진입 ON" 전제와 다르므로, 실제 적용 여부는 설정 파일로 재확인이 필요하다(본 브리핑은 조사·보고만 수행하며 설정을 확인·수정하지 않음).
+- **되돌림 가정을 깨는 구조적 신호는 없음.** 알트시즌 지수는 여전히 30대~50대(소스별 차이 있음, 임계값 75 미달)에 머물러 있고 비트코인 도미넌스도 58~60%대로 높아 "급등한 알트가 되돌림 없이 계속 오른다"는 알트시즌형 신호는 확인되지 않는다. 신규 바이낸스 "토큰 전체 상장폐지" 공지도 검색상 발견되지 않음(진행 중이던 EPIC·QUICK 등 기존 일정 외 신규 사건 없음).
+- **새 리스크: 거래소 자체 스트레스로 인한 체결·슬리피지 악화 가능성(신뢰도: 보통).** 해킹 발생 당일(10/29) 바이낸스 스프레드가 크게 벌어지고 현물 유동성이 줄었다는 애널리스트 언급(GSR)이 있고, 같은 날 레버리지 포지션 약 $1.55B가 청산됐다. 완화봇·원본봇 숏은 바이낸스 선물에서 스탑마켓 손절에 의존하므로, 이런 유동성 악화 국면에서는 평소보다 슬리피지가 커질 수 있다. 다만 `docs/would_change_log.md` 최신 기록(10-28)상 **숏 신규진입은 사용자 결정으로 재중지된 상태**로 보이며, 이는 이 작업 프롬프트의 "완화봇 신규진입 ON" 전제와 다르다. 실제 적용 여부는 설정 파일로 재확인이 필요하다(본 브리핑은 조사·보고만 수행, 설정 확인·수정 없음).
+- 빗썸 "거래유의종목 지정" 관련 11/1~11/2자 신규 공지는 검색으로 확인되지 않음(빗썸 공지 수집기 로그 직접 확인이 1차 소스, 본 브리핑 역할 밖).
 
 ## BTC 추세(200일선) 관련
-- **200일선 이탈 위험 신호 없음.** 가장 최근 확인된 가격(10/31자 보도)은 BTC가 $81,000 부근에서 거래 중이라는 내용이며, 10/29에는 $80,000선 아래로 밀렸다는 보도도 있어 최근 며칠은 $79,800~$81,000대에서 등락한 것으로 보인다. 11/1 당일 가격을 확정하는 1차 보도는 검색에서 찾지 못했다. 로그상 200일선(10/14 기준 약 72,133, 완만한 상승)과 비교하면 여전히 10% 이상 위에 있어 즉각적 이탈 위험은 낮다고 판단된다.
-- **FOMC(10/28) 매파적 동결 — 변화 없음.** 기준금리 3.75~4.00% 유지, 소수의견이 인상 쪽이었다는 점이 매파적 해석의 근거였다. 시장은 12/8~9 FOMC에서 추가 인상 가능성을 상당히 반영 중이라는 보도가 있었고, 이는 12월 FOMC 전까지 변동성을 키우는 배경으로 남아 있다. 오늘자 신규 Fed 발언·지표 발표는 검색에서 확인되지 않음.
-- **ETF 자금 흐름: 10/26~31 최신 수치 미확보.** 10월 내내 주 단위로 유출(약 -6.8억 달러, 10/5~9)과 소규모 유출(-2.3억 달러, 10/12~16), 유입(10/19, 10/20)이 교차했다. 10/26~31주 수치는 검색으로 확정하지 못했다(Farside·SoSoValue 등 1차 소스 직접 확인 필요, 본 브리핑 역할 범위 밖).
-- **미국 중간선거(11/3, 이틀 앞) — 가장 가까운 변동성 변수, 변화 없음.** 크립토 시장구조법(CLARITY Act 상원 버전)의 통과 여부가 선거 이후 정치 지형(민주당의 하원 탈환 가능성 등)에 좌우될 것이라는 분석이 이어지고 있으나, 법안 자체의 새로운 진전 보도는 없음. 선거 전후로 변동성이 커질 수 있다는 점은 전일과 동일하게 염두에 둘 만하다.
+- **200일선 이탈 위험: 상승(신뢰도: 보통) — 해킹 충격으로 BTC가 최근 수일 저점을 다시 찍음.** 10/29 해킹 공포로 BTC가 장중 약 $76,400까지 하락(9/18 이후 최저)했고, 10/31~11/2 사이 보도된 가격은 $77,000~$78,100 범위다(Fortune 11/2 06:30 ET 기준 약 $77,750, Yahoo 11월 진입가 $78,050, 10월 한 달 -7.3%). 10/14 기준 200일선이 약 72,133이었던 점(완만한 상승 중이므로 지금은 소폭 더 높을 것으로 추정)과 비교하면 **여전히 200일선 위에 있으나 그 간격이 10/31 시점(+13%대, $81K vs ~72K)보다 좁아졌다(현재 추정 +5~8%대)** — 10/22 이후 가장 가까워진 수준으로, 즉각적 이탈은 아니나 주시가 필요하다.
+- **ETF 자금 흐름: 추가 유출 확인.** 10/30 스팟 비트코인 ETF 단일 거래일 유출 $643M(6월 이후 최대 단일일 유출)이 보도됨. 10월 내내 이어진 유출 흐름(10/5~9 약 -$6.8억 등)과 같은 방향이며, 해킹과 겹쳐 하락 압력을 더했다.
+- **FOMC(10/28) 매파적 동결 — 배경 변화 없음.** 기준금리 3.75~4.00% 유지 유지, 12월 FOMC 전까지 변동성 변수로 남아 있음.
+- **미국 중간선거(11/3, 내일) — 가장 가까운 변동성 변수.** CLARITY Act(시장구조법) 통과 여부가 선거 이후 정치 지형에 좌우된다는 분석이 이어지고 있으나 법안 자체의 새 진전 보도는 없음. 재무장관 베센트는 선거 이후로 넘어가면 통과 가능성이 크게 낮아질 수 있다고 경고한 바 있음.
 
 ## 참고 뉴스
-- [Fed holds rates at 3.75%-4% as two dissents back a hike, bitcoin hovers near $81K (ForexCrunch)](https://www.forexcrunch.com/blog/2026/10/31/fed-holds-rates-at-3-75-4-as-two-dissents-back-a-hike-and-bitcoin-hovers-near-81k/) — 10/31자 보도, 현재까지 확인되는 가장 최신 BTC 가격·FOMC 해석 소스.
-- [Bitcoin Price Today: BTC Near $80,000 as Crypto Markets React to Fed's Steady Rate Decision (CryptoTimes)](https://www.cryptotimes.io/2026/10/29/bitcoin-price-today-btc-near-80000-as-crypto-markets-react-to-feds-steady-rate-decision/) — 10/29 BTC 8만 달러선 하회 보도, 최근 변동폭 참고.
-- [Binance to delist 10 margin and 12 spot trading pairs on October 30, 2026 (coin-turk)](https://en.coin-turk.com/binance-to-delist-10-margin-and-12-spot-trading-pairs-on-october-30-2026/) — 10/30 거래쌍 폐지(토큰 전체 상장폐지 아님), 진행 중인 배경 사건.
-- [Bitcoin ETFs Record $679M in Weekly Outflows Amid Uptober Slump (KuCoin)](https://www.kucoin.com/news/flash/bitcoin-etfs-record-679m-in-weekly-outflows-amid-uptober-slump) — 10월 초 대규모 ETF 유출, 10월 전체 흐름 참고용.
-- [Crypto market structure, implementation of GENIUS Act will dominate US policy discussion in 2026 — midterms as a swing factor (Cointelegraph / HTX Research 관련 보도 종합)](https://cointelegraph.com/news/crypto-market-structure-influence-us-midterms) — 11/3 중간선거가 시장구조법 통과 여부에 미칠 영향 관련 배경.
+- [FBI: North Korea Responsible for $6 Billion+ Binance Attack (FBI.gov)](https://www.fbi.gov/investigate/cyber/alerts/2026/north-korea-responsible-for-6-billion-binance-attack) — FBI가 10/29 바이낸스 해킹(6B달러 이상)을 북한 TraderTraitor 소행으로 공식 지목.
+- [What to know about the $6.3B hack on Binance, likely the biggest-ever crypto theft (PBS NewsHour)](https://www.pbs.org/newshour/world/what-to-know-about-the-6-3b-hack-on-binance-likely-the-biggest-ever-crypto-theft) — 사건 개요, 사상 최대 규모 거래소 해킹 추정.
+- [Bitcoin slides below $77,000, BNB drops amid Binance hack (The Block)](https://theblock.co/news/markets/2026-10-29-bitcoin-slides-below-77000-binance-hack-432183) — 10/29 해킹 발발 당일 BTC·BNB 급락, 청산 규모.
+- [Binance sets aside $6.34B to cover hack losses; CEO says 'your assets are safe' (Decrypt)](https://decrypt.co/382237/binance-sets-aside-6-34b-to-cover-hack-losses-ceo-says-your-assets-are-safe) — 바이낸스 자체 자금으로 손실 충당 발표, 단계적 입출금 재개 계획.
+- [Bitcoin price prediction for November 2026 (Yahoo Finance)](https://finance.yahoo.com/markets/crypto/articles/bitcoin-price-prediction-november-2026-204712855.html) — 11월 진입 시점 BTC $78,050, 10월 -7.3% 하락 요약.
 
 ## 조사 한계
-웹서치에서 "2026-11-01"로 날짜가 명확히 찍힌 1차 보도를 거의 찾지 못했다 — 검색 결과 다수가 과거 연도(2025 이전) 기사이거나 날짜 불명 요약·예측성 콘텐츠였다. 그 결과 이 브리핑은 10/27~31에 확인된 가장 최신 보도를 그대로 이어받아 "오늘도 유지"로 가정했으며, 이는 11/1 당일 발생한 사건을 놓쳤을 가능성을 배제하지 못한다. 알트시즌 지수(33~61)·ETF 자금 흐름(10/26~31 미확보)·빗썸 신규 공지 여부는 1차 소스(CoinMarketCap/BlockchainCenter, Farside/SoSoValue, 빗썸 공지 수집기 로그) 직접 확인이 필요하나 본 브리핑 역할 범위(조사·보고만, 코드·설정 수정 없음) 밖이라 수행하지 않았다.
+웹서치에서 "2026-11-02" 당일로 명확히 찍힌 1차 보도는 많지 않았고, 상당수 검색 결과가 연도가 다른 과거 기사(2018~2025)이거나 날짜 불명 요약·예측성 콘텐츠였다(알트시즌 지수·ETF 주간 흐름 등 일부는 10월 중순~말 수치를 그대로 가져옴). **가장 중요한 새 사건(바이낸스 해킹)은 검색어를 "오늘 뉴스"류에서 "바이낸스 상장폐지" 류로 좁혀가다 뒤늦게 발견됐다** — 전날(11-01) 브리핑이 이 사건을 전혀 포착하지 못한 것도 검색어가 너무 일반적이었기 때문일 가능성이 있다. 현재 200일선의 정확한 수치, 바이낸스 선물·마진 API/체결 상태가 실제로 영향을 받았는지, 11/2 기준 Proof of Reserves 공개 여부는 1차 소스(거래소 API, 바이낸스 공식 공지) 직접 확인이 필요하나 본 브리핑 역할 범위(조사·보고만, 코드·설정 수정 없음) 밖이라 수행하지 않았다.
